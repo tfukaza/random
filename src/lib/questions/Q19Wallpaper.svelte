@@ -1,0 +1,142 @@
+<script>
+	// Q19 — "which wallpaper looks best?" Each option button IS a live preview of
+	// its wallpaper style: plain, subtle dot grid, emojis flying around, gradient.
+	// Recorded into the shared choices store in case a later question wants to
+	// wallpaper itself with the taker's pick.
+	import SplitText from '$lib/SplitText.svelte';
+	import { choices } from '$lib/design/choices.svelte.js';
+	import EmojiFloat from './EmojiFloat.svelte';
+	let { onAnswer } = $props();
+
+	const prompt = 'If you had to choose, which wallpaper looks best to you?';
+
+	const options = [
+		{ id: 'plain', label: 'Plain background', score: { sage: 3 } },
+		{ id: 'dots', label: 'Subtle pattern', score: { maker: 3 } },
+		{ id: 'crazy', label: 'Go crazy', score: { adventurer: 3 } },
+		{ id: 'gradient', label: 'Gradient', score: { connector: 3 } }
+	];
+
+	// The flying emojis for the "Go crazy" preview. Each gets its own lane,
+	// speed, and delay via CSS custom props.
+	const EMOJIS = ['🎉', '🦄', '🍕', '✨', '🐸', '🚀', '💫', '🌈'];
+
+	/** @type {number | null} */
+	let picked = $state(null);
+
+	/** @param {number} i */
+	function choose(i) {
+		picked = i;
+		choices.wallpaper = options[i].id;
+		setTimeout(() => onAnswer(options[i].score), 340);
+	}
+</script>
+
+<div class="wallpaper-pick">
+	<h2><SplitText text={prompt} stagger={14} /></h2>
+	<hr class="rule" />
+	<div class="grid">
+		{#each options as opt, i}
+			<button
+				class="card {opt.id}"
+				class:picked={picked === i}
+				style="--i: {i}"
+				disabled={picked !== null}
+				onclick={() => choose(i)}
+			>
+				{#if opt.id === 'crazy'}
+					<EmojiFloat emojis={EMOJIS} perEmoji={3} size="1rem" />
+				{/if}
+				<span class="label">{opt.label}</span>
+			</button>
+		{/each}
+	</div>
+</div>
+
+<style>
+	h2 {
+		margin: 0 0 1.25rem;
+		font-size: 1.85rem;
+		line-height: 1.25;
+	}
+	.wallpaper-pick > hr {
+		margin: 0 0 1.75rem;
+	}
+	.grid {
+		display: grid;
+		grid-template-columns: repeat(2, 1fr);
+		gap: 1rem;
+	}
+	.card {
+		position: relative;
+		overflow: hidden;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 7.5rem;
+		padding: 1rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		cursor: pointer;
+		font: inherit;
+		color: inherit;
+		animation: rise 0.45s calc(0.25s + var(--i) * 80ms) both;
+		transition:
+			transform 0.12s ease,
+			border-color 0.12s ease,
+			box-shadow 0.12s ease;
+	}
+	.card:hover:not(:disabled) {
+		transform: translateY(-3px);
+		border-color: var(--ink);
+		box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+	}
+	.card.picked {
+		border-color: var(--ink);
+		box-shadow: 0 0 0 3px var(--accent-soft);
+	}
+	.card:disabled {
+		cursor: default;
+	}
+	.card:disabled:not(.picked) {
+		opacity: 0.55;
+	}
+	.label {
+		position: relative;
+		z-index: 1;
+		font-size: 1.05rem;
+		font-weight: 600;
+		padding: 0.35rem 0.9rem;
+		background: rgba(255, 255, 255, 0.82);
+		border-radius: 999px;
+	}
+
+	/* 1 — Plain: nothing but a flat background. That's the point. */
+	.plain {
+		background: #f4f3f0;
+	}
+
+	/* 2 — Subtle pattern: a fine dot grid. */
+	.dots {
+		background-color: #f7f6f3;
+		background-image: radial-gradient(circle, rgba(0, 0, 0, 0.16) 1px, transparent 1px);
+		background-size: 14px 14px;
+	}
+
+	/* 3 — Go crazy: emojis floating up like balloons (shared EmojiFloat overlay).
+	   Fewer instances here than the real wallpaper — it's a small preview tile. */
+	.crazy {
+		background: #fffbe8;
+	}
+
+	/* 4 — Gradient: light gray to even lighter gray. Riveting. */
+	.gradient {
+		background: linear-gradient(135deg, #dcdcdc 0%, #f6f6f6 100%);
+	}
+
+	@media (max-width: 520px) {
+		.grid {
+			grid-template-columns: 1fr;
+		}
+	}
+</style>
