@@ -6,11 +6,11 @@
 	const prompt =
 		'You just moved into a new 100-story apartment building. Rent, floor space, floor plan — everything is exactly the same on every floor. Which floor would you live on?';
 	const options = [
-		{ label: 'Basement', score: { maker: 3 } },
-		{ label: 'Floor 1', score: { connector: 3 } },
-		{ label: 'Floor 10', score: { sage: 3 } },
-		{ label: 'Floor 50', score: { adventurer: 3 } },
-		{ label: 'The top — floor 100', score: { adventurer: 3 } }
+		{ label: 'Basement', score: { social: -2, creative: 1 } },
+		{ label: 'Floor 1', score: { creative: -2, tempo: 1 } },
+		{ label: 'Floor 10', score: { risk: -1 } },
+		{ label: 'Floor 50', score: {} },
+		{ label: 'The top — floor 100', score: { risk: 3, scope: 2 } }
 	];
 </script>
 

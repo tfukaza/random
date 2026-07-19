@@ -19,8 +19,12 @@
 	/** @param {number} low @param {number} high */
 	function toScore(low, high) {
 		const span = high - low + 1;
-		// Placeholder: wider selections lean maker, narrower lean sage.
-		return span > 13 ? { maker: 3 } : { sage: 3 };
+		// Grabbing nearly the whole alphabet is maximalism; a defiant few
+		// letters is a minimalist flex that costs the UI its own words.
+		if (span >= 20) return { scope: 2, risk: 1 };
+		if (span <= 4) return { creative: 2, risk: 2, scope: -2 };
+		// Any middling span is the same mild detail-orientation either way.
+		return { scope: -1 };
 	}
 </script>
 

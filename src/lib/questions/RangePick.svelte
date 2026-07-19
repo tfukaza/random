@@ -8,6 +8,8 @@
 	// Only the two selected labels are shown (on the thumbs) plus the endpoints —
 	// listing every label would be unreadable on mobile for long sets.
 	import SplitText from '$lib/SplitText.svelte';
+	import { cascade } from '$lib/reveal.js';
+	import { playSfx } from '$lib/audio/audio.svelte.js';
 
 	let {
 		prompt,
@@ -27,6 +29,19 @@
 		onAnswer
 	} = $props();
 
+	// prompt → rule → ends → track → readout → Next (last, per $lib/reveal.js).
+	const seq = $derived.by(() => {
+		const c = cascade();
+		return {
+			prompt: c.text(prompt),
+			rule: c.rule(),
+			ends: c.block(),
+			track: c.block(),
+			readout: c.block(),
+			next: c.action()
+		};
+	});
+
 	// Props are static per question, so seeding state from them once is intended.
 	// svelte-ignore state_referenced_locally
 	const last = labels.length - 1;
@@ -39,6 +54,7 @@
 
 	/** @type {'low' | 'high' | null} */
 	let dragging = $state(null);
+	let lastDetent = 0;
 	/** @type {HTMLElement | null} */
 	let trackEl = $state(null);
 
@@ -64,13 +80,24 @@
 	function setLow(v) {
 		let n = Math.max(0, Math.min(v, high - minSpan + 1));
 		if (high - n + 1 > cap) n = high - cap + 1;
+		if (n === low) return;
 		low = n;
+		detent();
 	}
 	/** @param {number} v */
 	function setHigh(v) {
 		let n = Math.min(last, Math.max(v, low + minSpan - 1));
 		if (n - low + 1 > cap) n = low + cap - 1;
+		if (n === high) return;
 		high = n;
+		detent();
+	}
+
+	function detent() {
+		const now = performance.now();
+		if (now - lastDetent < 55) return;
+		lastDetent = now;
+		void playSfx('slider-detent');
 	}
 
 	/** @param {number} clientX */
@@ -132,11 +159,11 @@
 		     entrance animation on every slider move. -->
 		<h2 class="redacted">{shownPrompt}</h2>
 	{:else}
-		<h2><SplitText text={prompt} stagger={14} /></h2>
+		<h2><SplitText text={prompt} delay={seq.prompt} /></h2>
 	{/if}
-	<hr class="rule" />
+	<hr class="rule" style="animation-delay: {seq.rule}ms" />
 
-	<div class="ends">
+	<div class="ends" style="animation-delay: {seq.ends}ms">
 		<span>{labels[0]}</span>
 		<span>{labels[last]}</span>
 	</div>
@@ -187,7 +214,7 @@
 		<span class="count">({count} of {labels.length})</span>
 	</p>
 
-	<button class="next" onclick={commit}>{shownNext} →</button>
+	<button class="next" onclick={commit} style="animation-delay: {seq.next}ms">{shownNext} →</button>
 </div>
 
 <style>
@@ -201,9 +228,11 @@
 		min-height: 4.6rem;
 	}
 	.range-pick > hr {
+		animation: draw 0.4s both;
 		margin: 0 0 1.75rem;
 	}
 	.ends {
+		animation: rise 0.42s both;
 		display: flex;
 		justify-content: space-between;
 		font-weight: 700;
@@ -276,6 +305,7 @@
 		margin-left: 0.35rem;
 	}
 	.next {
+		animation: rise 0.42s both;
 		display: block;
 		margin-left: auto;
 		padding: 0.75rem 1.5rem;

@@ -4,8 +4,20 @@
 	// the rightmost cell describes what you actually get at the current tier.
 	// Rows share one budget, so + is blocked once the budget is spent.
 	import SplitText from '$lib/SplitText.svelte';
+	import { cascade, ITEM_MS } from '$lib/reveal.js';
 
 	let { prompt, budget, step = 10, categories, toScore, onAnswer } = $props();
+
+	// prompt → rule → category rows → submit (last, once the rows have landed).
+	const seq = $derived.by(() => {
+		const c = cascade();
+		return {
+			prompt: c.text(prompt),
+			rule: c.rule(),
+			rows: c.items(categories.length),
+			submit: c.action()
+		};
+	});
 
 	// svelte-ignore state_referenced_locally
 	let values = $state(
@@ -38,10 +50,10 @@
 </script>
 
 <div class="builder">
-	<h2><SplitText text={prompt} stagger={14} /></h2>
-	<hr class="rule" />
+	<h2><SplitText text={prompt} delay={seq.prompt} /></h2>
+	<hr class="rule" style="animation-delay: {seq.rule}ms" />
 
-	<p class="remaining" class:tight={remaining === 0}>
+	<p class="remaining" class:tight={remaining === 0} style="animation-delay: {seq.rows}ms">
 		<span class="amt">${remaining}</span> of ${budget} left to spend
 	</p>
 
@@ -69,7 +81,9 @@
 		{/each}
 	</div>
 
-	<button class="submit" onclick={submit}>Lock in my dinner →</button>
+	<button class="submit" onclick={submit} style="animation-delay: {seq.submit}ms"
+		>Lock in my dinner →</button
+	>
 </div>
 
 <style>
@@ -79,6 +93,7 @@
 		line-height: 1.25;
 	}
 	.builder > hr {
+		animation: draw 0.4s both;
 		margin: 0 0 1.25rem;
 	}
 	.remaining {
@@ -92,6 +107,9 @@
 	}
 	.remaining.tight .amt {
 		color: var(--muted);
+	}
+	.remaining {
+		animation: rise 0.42s both;
 	}
 	.rows {
 		display: flex;
@@ -153,6 +171,7 @@
 		font-style: italic;
 	}
 	.submit {
+		animation: rise 0.42s both;
 		display: block;
 		margin: 0 auto;
 		padding: 0.75rem 1.5rem;

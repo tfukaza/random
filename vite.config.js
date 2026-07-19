@@ -3,6 +3,9 @@ import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
+	ssr: {
+		noExternal: ['@snap-engine/asset-base', '@snap-engine/snapsort']
+	},
 	plugins: [
 		sveltekit({
 			compilerOptions: {

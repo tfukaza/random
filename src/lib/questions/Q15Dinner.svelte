@@ -61,12 +61,30 @@
 
 	/** @param {Record<string, number>} values */
 	function toScore(values) {
-		return {
-			connector: Math.round(values.appetizer / 10),
-			sage: Math.round(values.soup / 10),
-			maker: Math.round(values.entree / 10),
-			adventurer: Math.round(values.dessert / 10)
-		};
+		/** @type {Record<string, number>} */
+		const delta = {};
+		// Axis scoring reads the SHAPE of the allocation, not the courses:
+		// going all-in, spreading evenly, splurging on dessert, or leaving
+		// money on the table each say something different.
+		const spent = Object.values(values).reduce((a, b) => a + b, 0);
+		const courses = [values.appetizer, values.soup, values.entree, values.dessert];
+		/** @param {string} axis @param {number} pts */
+		const add = (axis, pts) =>
+			(delta[axis] = Math.max(-3, Math.min(3, (delta[axis] ?? 0) + pts)));
+		if (Math.max(...courses) >= 50) {
+			add('risk', 2);
+			add('scope', 1);
+		}
+		if (courses.every((c) => c >= 20)) {
+			add('scope', -2);
+			add('risk', -1);
+		}
+		if (values.dessert >= 40) add('creative', 2);
+		if (100 - spent >= 20) {
+			add('risk', -2);
+			add('creative', -1);
+		}
+		return delta;
 	}
 </script>
 

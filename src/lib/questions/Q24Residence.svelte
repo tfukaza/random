@@ -8,10 +8,16 @@
 	const prompt =
 		'If you could live anywhere, which of these would you choose as your permanent place of residence?';
 	const options = [
-		{ label: 'A submarine', score: { sage: 3 } },
-		{ label: 'A blimp — perpetually flying, never landing', score: { adventurer: 3 } },
-		{ label: 'The space station', score: { maker: 3 } },
-		{ label: 'Right next to a nuclear power plant — electricity is free', score: { connector: 3 } }
+		{ label: 'A submarine', score: { social: -3, scope: -1 } },
+		{
+			label: 'A blimp — perpetually flying, never landing',
+			score: { risk: 2, creative: 2 }
+		},
+		{ label: 'The space station', score: { scope: 2, risk: 1 } },
+		{
+			label: 'Right next to a nuclear power plant — electricity is free',
+			score: { creative: -2, risk: 1 }
+		}
 	];
 </script>
 

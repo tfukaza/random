@@ -1,46 +1,38 @@
-// The category buckets a quiz-taker can land in.
-// Each question awards points to one or more of these ids; highest total wins.
-export const CATEGORIES = [
+// The seven signed temperament axes — the whole scoring system.
+//
+// (An earlier four-bucket scheme — adventurer/sage/maker/connector — was
+// retired once the axes and the 128 types replaced it. Because mergeScores
+// only adds keys already present in the total, any stale trait key left in a
+// question is silently ignored rather than corrupting a tally.)
+//
+// Positive/negative pole meanings are fixed here and nowhere else; a value of
+// 0 collapses to the positive pole when typing (honesty: innocent until
+// proven lying). See docs/design.md.
+export const AXES = [
+	{ id: 'social', negLabel: 'Introvert', posLabel: 'Extrovert', negEmoji: '🤫', posEmoji: '🎉' },
+	{ id: 'honesty', negLabel: 'Dishonest', posLabel: 'Honest', negEmoji: '🤥', posEmoji: '😇' },
+	{ id: 'creative', negLabel: 'Pragmatic', posLabel: 'Creative', negEmoji: '🔧', posEmoji: '🎨' },
+	{ id: 'risk', negLabel: 'Cautious', posLabel: 'Risk-taker', negEmoji: '🛡️', posEmoji: '🎢' },
 	{
-		id: 'adventurer',
-		emoji: '🧭',
-		title: 'The Adventurer',
-		blurb:
-			'You chase novelty and say yes before you overthink it. Comfort zones bore you; the unknown is where you feel most alive.'
+		id: 'scope',
+		negLabel: 'Detail-oriented',
+		posLabel: 'Big-picture',
+		negEmoji: '🔬',
+		posEmoji: '🔭'
 	},
-	{
-		id: 'sage',
-		emoji: '🦉',
-		title: 'The Sage',
-		blurb:
-			'You want to understand how things really work. You sit with a problem until it clicks, and you trust reason over hype.'
-	},
-	{
-		id: 'maker',
-		emoji: '🛠️',
-		title: 'The Maker',
-		blurb:
-			'You think with your hands. An idea only feels real once you have built, drawn, or shipped a version of it.'
-	},
-	{
-		id: 'connector',
-		emoji: '💞',
-		title: 'The Connector',
-		blurb:
-			'People are your compass. You read a room instinctively and you are happiest making others feel seen and included.'
-	}
+	{ id: 'tempo', negLabel: 'Long & steady', posLabel: 'Quick-action', negEmoji: '🐢', posEmoji: '⚡' },
+	{ id: 'coord', negLabel: 'Lone wolf', posLabel: 'Team-player', negEmoji: '🐺', posEmoji: '🤝' }
 ];
 
-/** The set of valid category ids, for quick lookups/validation. */
-export const CATEGORY_IDS = CATEGORIES.map((c) => c.id);
+export const AXIS_IDS = AXES.map((a) => a.id);
 
-/** A fresh score map with every category at 0. */
+/** A fresh score map with every axis at 0. */
 export function emptyScores() {
-	return Object.fromEntries(CATEGORY_IDS.map((id) => [id, 0]));
+	return Object.fromEntries(AXIS_IDS.map((id) => [id, 0]));
 }
 
 /**
- * Add a partial score delta (e.g. { adventurer: 2, sage: 1 }) into a running
+ * Add a partial score delta (e.g. { social: 2, risk: -1 }) into a running
  * total, returning a new object. Unknown keys are ignored so questions can't
  * corrupt the tally.
  * @param {Record<string, number>} total
@@ -56,18 +48,10 @@ export function mergeScores(total, delta) {
 }
 
 /**
- * Return the full category object with the highest score (ties → first defined).
+ * The taker's position on each temperament axis — drives the result spectra,
+ * the live HUD, and the 2^7 type key. `value` is the raw signed sum.
  * @param {Record<string, number>} total
  */
-export function topCategory(total) {
-	let best = CATEGORIES[0];
-	let bestScore = -Infinity;
-	for (const cat of CATEGORIES) {
-		const score = total[cat.id] ?? 0;
-		if (score > bestScore) {
-			best = cat;
-			bestScore = score;
-		}
-	}
-	return best;
+export function axisSummary(total) {
+	return AXES.map((axis) => ({ ...axis, value: total[axis.id] ?? 0 }));
 }

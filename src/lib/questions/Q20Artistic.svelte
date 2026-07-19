@@ -12,8 +12,17 @@
 	import { PALETTES, readableOn } from '$lib/design/palettes.js';
 	import { BUTTON_VARIANTS } from '$lib/design/buttons.js';
 	import { choices } from '$lib/design/choices.svelte.js';
+	import SplitText from '$lib/SplitText.svelte';
+	import { cascade, ITEM_MS } from '$lib/reveal.js';
 	import EmojiFloat from './EmojiFloat.svelte';
 	let { onAnswer } = $props();
+
+	// This file had no entry animations at all; the Likert row now arrives
+	// after the prompt like every other question.
+	const seq = $derived.by(() => {
+		const c = cascade();
+		return { prompt: c.text(prompt), buttons: c.items(LIKERT.length) };
+	});
 
 	const prompt = 'I consider myself to have an artistic side.';
 	const LIKERT = ['Strongly disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly agree'];
@@ -110,10 +119,33 @@
 	/** @type {number | null} */
 	let picked = $state(null);
 
+	// The options everyone with taste agrees are bad: Comic Sans, the clashing
+	// palettes (neon included), the flying-emoji wallpaper. Used only for the
+	// honesty cross-check below — the taker is free to love them.
+	const BAD_FONTS = new Set(['comic']);
+	const BAD_PALETTES = new Set(['ugly-pg', 'ugly-mmt', 'neon']);
+	const BAD_WALLPAPERS = new Set(['crazy']);
+
 	/** @param {number} i */
 	function choose(i) {
 		picked = i;
-		setTimeout(() => onAnswer({ maker: i }), 340);
+		// Base: the claim itself. Creative scales with agreement.
+		/** @type {Record<string, number>} */
+		const delta = { creative: [-3, -1, 0, 2, 3][i] };
+		// Honesty cross-check (scoring plan / design.md P2): the taker just made
+		// a claim about their artistic eye, and Q16–Q19 quietly collected the
+		// evidence. Note this reads the REAL answers, not the dev overrides.
+		const T =
+			(choices.font && BAD_FONTS.has(choices.font.id) ? 1 : 0) +
+			(choices.palette && BAD_PALETTES.has(choices.palette.id) ? 1 : 0) +
+			(choices.wallpaper && BAD_WALLPAPERS.has(choices.wallpaper) ? 1 : 0);
+		const claimed = choices.font || choices.palette || choices.wallpaper; // deep-link guard
+		if (claimed) {
+			if (i >= 3 && T >= 2) delta.honesty = -3; // claims artistic, demonstrably bad taste
+			else if (i >= 3 && T === 0) delta.honesty = 2; // claim consistent with evidence
+			else if (i <= 1 && T >= 2) delta.honesty = 2; // knows exactly what they are
+		}
+		setTimeout(() => onAnswer(delta), 340);
 	}
 </script>
 
@@ -127,11 +159,12 @@
 	class="q20"
 	style="--q-bg:{roles.bg}; --q-text:{roles.text}; --q-accent:{roles.accent}; --q-btn-text:{btnText}; --q-font:{font.css};"
 >
-	<h2>{prompt}</h2>
+	<h2><SplitText text={prompt} delay={seq.prompt} /></h2>
 	<div class="likert">
 		{#each LIKERT as label, i}
 			<button
 				class="btn {variant}"
+				style="animation-delay: {seq.buttons + i * ITEM_MS}ms"
 				class:dim={picked !== null && picked !== i}
 				disabled={picked !== null}
 				onclick={() => choose(i)}
@@ -215,6 +248,7 @@
 	/* The "go crazy" wallpaper is rendered by the shared EmojiFloat overlay. */
 
 	.btn {
+		animation: rise 0.42s both;
 		font-family: var(--q-font);
 		font-weight: 600;
 		font-size: 1rem;

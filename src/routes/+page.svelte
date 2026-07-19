@@ -3,29 +3,44 @@
 	import { scale } from 'svelte/transition';
 	import { replaceState } from '$app/navigation';
 	import { questions } from '$lib/questions/index.js';
-	import Q21GroupChat from '$lib/questions/Q21GroupChat.svelte';
+	import PatienceLens from '$lib/PatienceLens.svelte';
+	import BloodPool from '$lib/BloodPool.svelte';
+	import { stash, clearStash } from '$lib/questions/stashState.svelte.js';
+	import TemperamentHud from '$lib/TemperamentHud.svelte';
+	import { patience, patienceMode } from '$lib/questions/patienceState.svelte.js';
 	import { interludes } from '$lib/interludes.js';
 	import Interlude from '$lib/Interlude.svelte';
 	import Result from '$lib/questions/Result.svelte';
 	import SplitText from '$lib/SplitText.svelte';
 	import { emptyScores, mergeScores } from '$lib/scoring.js';
+	import AudioController from '$lib/audio/AudioController.svelte';
+	import SoundControl from '$lib/audio/SoundControl.svelte';
+	import {
+		audioState,
+		hydrateAudioPreference,
+		setAudioEnabled,
+		setMusicRate,
+		setMusicTrack,
+		startAudio
+	} from '$lib/audio/audio.svelte.js';
 
-	// The quiz flow interleaves questions with interlude break cards: after
-	// question n, any interlude configured with `after: n` slots in. Interludes
-	// placed past the last question show right before the result.
+	// The quiz flow interleaves questions with interlude break cards: after the
+	// question whose id is `after`, that interlude slots in. Interludes with
+	// `after: null` show right before the result. Pinning to ids (not positions)
+	// means interludes follow their question through any reorder of flowOrder.
 	const flow = (() => {
-		/** @type {Array<{kind: 'question', component: any, qNumber: number} | {kind: 'interlude', message: string, iNumber: number}>} */
+		/** @type {Array<{kind: 'question', id: string, component: any, qNumber: number} | {kind: 'interlude', message: string, iNumber: number}>} */
 		const items = [];
 		let iCount = 0;
-		questions.forEach((component, qi) => {
-			items.push({ kind: 'question', component, qNumber: qi + 1 });
+		questions.forEach(({ id, component }, qi) => {
+			items.push({ kind: 'question', id, component, qNumber: qi + 1 });
 			for (const il of interludes) {
-				if (il.after === qi + 1)
+				if (il.after === id)
 					items.push({ kind: 'interlude', message: il.message, iNumber: ++iCount });
 			}
 		});
 		for (const il of interludes) {
-			if (il.after > questions.length)
+			if (il.after === null)
 				items.push({ kind: 'interlude', message: il.message, iNumber: ++iCount });
 		}
 		return items;
@@ -41,10 +56,33 @@
 
 	// Formats that take over the whole question area (no № marker — they show
 	// the question number their own way). Add future full-bleed formats here.
-	const FULL_BLEED = new Set([Q21GroupChat]);
-	const showMarker = $derived(
-		current?.kind === 'question' && !FULL_BLEED.has(current.component)
+	const FULL_BLEED = new Set(['q21']);
+	const showMarker = $derived(current?.kind === 'question' && !FULL_BLEED.has(current.id));
+	const immersive = $derived(current?.kind === 'question' && current.id === 'q47');
+
+	// The stretch of flow indices the patience lens governs: everything after
+	// q29 up to the next interlude, which acts as the reset. Computed from the
+	// flow rather than hardcoded positions so it survives reordering.
+	const patienceBand = (() => {
+		const start = flow.findIndex((f) => f.kind === 'question' && f.id === 'q29');
+		if (start < 0) return null;
+		const after = flow.findIndex((f, i) => i > start && f.kind === 'interlude');
+		return { from: start + 1, to: after < 0 ? flow.length : after };
+	})();
+
+	// q47 is excluded because blurring or delaying a six-second physical reaction test would make
+	// its outcome depend on the wrapper rather than the taker's choice.
+	const lensed = $derived(
+		!!patienceBand &&
+			current?.kind === 'question' &&
+			index >= patienceBand.from &&
+			index < patienceBand.to &&
+			current.id !== 'q47'
 	);
+	const lensMode = $derived(lensed ? patienceMode() : 'normal');
+	$effect(() => {
+		setMusicRate(lensMode === 'fast' ? 5 : lensMode === 'slow' ? 1 / 3 : 1);
+	});
 
 	// One bookmark tab peeks out from behind the certificate for every
 	// interlude already passed — a wordless progress cue.
@@ -61,6 +99,7 @@
 	// while playing. Questions that depend on earlier answers won't have them
 	// when deep-linked — that's fine, debug only.
 	onMount(() => {
+		hydrateAudioPreference();
 		const params = new URLSearchParams(location.search);
 		const i = Number(params.get('i'));
 		const q = Number(params.get('q'));
@@ -100,10 +139,38 @@
 	}
 
 	function start() {
+		const restarting = phase === 'result';
+		startAudio();
+		if (restarting) void setMusicTrack('default', { restart: true });
 		scores = emptyScores();
 		index = 0;
 		phase = 'quiz';
+		bandScored = false;
+		clearStash();
 		syncUrl();
+	}
+
+	/** @param {Event} event */
+	function chooseSound(event) {
+		setAudioEnabled(/** @type {HTMLInputElement} */ (event.currentTarget).checked);
+	}
+
+	// The patience band is a claim under test (scoring plan / design.md P2):
+	// an extreme Q29 answer (≤2 or ≥6) subjects the taker to the fast/slow lens
+	// for the rest of the band. Surviving it earns honesty (+ tempo in the pole
+	// they claimed); taking the escape hatch is scored as the claim being a lie.
+	// Middling claims (3–5) were never tested, so they earn nothing.
+	let bandScored = false;
+	function scoreBandExit() {
+		if (bandScored || !patienceBand) return;
+		bandScored = true;
+		const v = patience.value;
+		if (typeof v !== 'number' || (v > 2 && v < 6)) return;
+		/** @type {Record<string, number>} */
+		const delta = patience.bailed
+			? { honesty: -4 }
+			: { honesty: 4, tempo: v <= 2 ? 3 : -3 };
+		scores = mergeScores(scores, delta);
 	}
 
 	function advance() {
@@ -112,6 +179,9 @@
 		} else {
 			phase = 'result';
 		}
+		if (patienceBand && (index >= patienceBand.to || phase === 'result')) scoreBandExit();
+		// An interlude is the bound on the bleeding: reaching one wipes the card.
+		if (flow[index]?.kind === 'interlude') clearStash();
 		syncUrl();
 	}
 
@@ -122,10 +192,20 @@
 		scores = mergeScores(scores, delta);
 		advance();
 	}
+
+	// Whether the live temperament meter is open — the page pads its bottom so
+	// the certificate can always scroll clear of the panel.
+	let hudOpen = $state(false);
 </script>
 
-<main>
+<main class:hud-open={hudOpen && phase === 'quiz'}>
 	<div class="stage">
+		<!-- First child of the stage, and outside {#key index}: it paints beneath
+		     the sheets and the certificate, and its wall-clock spread survives
+		     every question change instead of restarting. -->
+		{#if phase === 'quiz' && stash.hiddenAt !== null}
+			<BloodPool />
+		{/if}
 		<span class="sheet sheet--under" aria-hidden="true"></span>
 		<span class="sheet sheet--deep" aria-hidden="true"></span>
 		{#each Array(tabsEarned) as _, t (t)}
@@ -133,7 +213,7 @@
 		{/each}
 		<span class="curl curl--left" aria-hidden="true"></span>
 		<span class="curl curl--right" aria-hidden="true"></span>
-		<div class="frame">
+		<div class="frame" class:frame--immersive={immersive}>
 			<span class="corner corner--tl"></span>
 			<span class="corner corner--tr"></span>
 			<span class="corner corner--bl"></span>
@@ -150,33 +230,43 @@
 						<hr class="rule" />
 					</div>
 					<p>
-						A handful of very different questions. No wrong answers — just move fast and go with
+						A handful of very different questions. No wrong answers — just go with
 						your gut.
 					</p>
-					<button class="start" onclick={start}><span class="start-label">Begin</span></button>
+					<label class="sound-choice">
+						<input type="checkbox" checked={audioState.enabled} onchange={chooseSound} />
+						<span>Play with sound</span>
+					</label>
+					<button class="start" onpointerdown={startAudio} onclick={start}
+						><span class="start-label">Begin</span></button
+					>
 				</section>
 			{:else if phase === 'quiz'}
 				<section class="quiz" in:scale={{ start: 0.98, duration: 400 }}>
 					{#key index}
 						<div class="question" in:settle={{ duration: 400 }}>
 							{#if current.kind === 'question'}
-								{#if showMarker}
-									<div class="question-marker">
-										<hr class="rule" />
-										<span class="question-number">
-											<svg viewBox="0 0 72 72" aria-hidden="true">
-												<circle cx="36" cy="36" r="34" />
-											</svg>
-											<span class="numeral"><span class="no">№</span>{current.qNumber}</span>
-										</span>
-										<hr class="rule" />
-									</div>
-								{/if}
-
 								<!-- Each question owns its own layout & input; we only pass the callback
 								     (plus its number, for formats that display it themselves).
-								     `key` forces a fresh instance per question so internal state resets. -->
-								<CurrentQuestion onAnswer={handleAnswer} qNumber={current.qNumber} />
+								     `key` forces a fresh instance per question so internal state resets.
+								     The № marker sits INSIDE the lens so the patience governor scales
+								     its arrival too — outside, it would keep animating at full speed
+								     while everything below it crawled. -->
+								<PatienceLens mode={lensMode} debug={lensed}>
+									{#if showMarker}
+										<div class="question-marker">
+											<hr class="rule" />
+											<span class="question-number">
+												<svg viewBox="0 0 72 72" aria-hidden="true">
+													<circle cx="36" cy="36" r="34" />
+												</svg>
+												<span class="numeral"><span class="no">№</span>{current.qNumber}</span>
+											</span>
+											<hr class="rule" />
+										</div>
+									{/if}
+									<CurrentQuestion onAnswer={handleAnswer} qNumber={current.qNumber} />
+								</PatienceLens>
 							{:else}
 								<Interlude message={current.message} onNext={advance} />
 							{/if}
@@ -192,12 +282,46 @@
 	</div>
 </main>
 
+<AudioController active={phase !== 'intro'} />
+{#if phase !== 'intro'}
+	<SoundControl />
+{/if}
+
+{#if phase === 'quiz'}
+	<TemperamentHud {scores} onToggle={(/** @type {boolean} */ o) => (hudOpen = o)} />
+{/if}
+
 <style>
 	main {
 		display: flex;
 		justify-content: center;
 		align-items: flex-start;
 		padding: clamp(1.5rem, 5vw, 4rem) 1.25rem 4rem;
+	}
+	.sound-choice {
+		display: flex;
+		align-items: center;
+		gap: 0.55rem;
+		width: max-content;
+		margin: -1rem auto 1.25rem;
+		color: var(--muted);
+		font-size: 0.85rem;
+		cursor: pointer;
+		animation: rise 0.45s 1.4s both;
+	}
+	.sound-choice input {
+		margin: 0;
+		accent-color: var(--ink);
+	}
+	/* Room for the open temperament meter, so the certificate's bottom edge
+	   (Next buttons, ground shadows) can always be scrolled clear of it. */
+	main.hud-open {
+		padding-bottom: 11rem;
+	}
+	@media (max-width: 560px) {
+		main.hud-open {
+			padding-bottom: 12rem;
+		}
 	}
 	.stage {
 		position: relative;
@@ -288,6 +412,9 @@
 			0 1rem 1rem rgba(0, 0, 0, 0.03),
 			0 2rem 2rem rgba(0, 0, 0, 0.025),
 			0 0 0.0625rem rgba(0, 0, 0, 0.055);
+	}
+	.frame--immersive {
+		padding: clamp(0.7rem, 2vw, 1rem);
 	}
 	.frame::before {
 		content: '';

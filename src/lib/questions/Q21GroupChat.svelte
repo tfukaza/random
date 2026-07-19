@@ -11,8 +11,9 @@
 		'secure.billing-dept@credlt-card-verify0.biz.co'
 	];
 	const options = [
-		{ label: 'Let me respond ASAP', score: { connector: 3 } },
-		{ label: 'Screw off, scammer', score: { adventurer: 2, sage: 1 } }
+		{ label: 'Let me respond ASAP', score: { risk: 2, social: 1, tempo: 2 } },
+		// the honesty point is for bluntness; scope for actually reading that address
+		{ label: 'Screw off, scammer', score: { scope: -2, honesty: 1 } }
 	];
 </script>
 

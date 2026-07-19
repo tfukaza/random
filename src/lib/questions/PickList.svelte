@@ -4,10 +4,34 @@
 	// the onAnswer callback; we render the choices and auto-commit on click.
 	// Layout adapts: <=4 options → 2-col cards, more → a compact single column.
 	import SplitText from '$lib/SplitText.svelte';
+	import { cascade, ITEM_MS } from '$lib/reveal.js';
 
 	// `premise` is optional scene-setting shown above the prompt — used by lore
 	// arc questions (see docs/lore.md); plain questions just omit it.
-	let { premise = '', prompt, options, onAnswer, onPick = () => {} } = $props();
+	// `children` (implicit snippet) renders a figure between the prompt's rule
+	// and the options — for questions built around a diagram (see Q33Snakes).
+	let {
+		premise = '',
+		prompt,
+		options,
+		onAnswer,
+		onPick = () => {},
+		children = undefined
+	} = $props();
+
+	// Reveal order: premise → prompt (word by word) → rule → figure → cards.
+	// Delays are computed rather than hand-tuned so a long prompt pushes the
+	// cards later instead of them racing it. See $lib/reveal.js.
+	const seq = $derived.by(() => {
+		const c = cascade();
+		return {
+			premise: premise ? c.text(premise) : 0,
+			prompt: c.text(prompt),
+			rule: c.rule(),
+			figure: children ? c.block() : 0,
+			cards: c.items(options.length)
+		};
+	});
 
 	/** @type {number | null} */
 	let picked = $state(null);
@@ -39,16 +63,19 @@
 
 <div class="pick-list">
 	{#if premise}
-		<p class="premise">{premise}</p>
+		<p class="premise"><SplitText text={premise} delay={seq.premise} /></p>
 	{/if}
-	<h2><SplitText text={prompt} stagger={14} /></h2>
-	<hr class="rule" />
+	<h2><SplitText text={prompt} delay={seq.prompt} /></h2>
+	<hr class="rule" style="animation-delay: {seq.rule}ms" />
+	{#if children}
+		<div class="figure" style="animation-delay: {seq.figure}ms">{@render children()}</div>
+	{/if}
 	<div class="grid" style="--cols: {columns}">
 		{#each options as opt, i}
 			<button
 				class="card"
 				class:picked={picked === i}
-				style="--i: {i}"
+				style="animation-delay: {seq.cards + i * ITEM_MS}ms"
 				disabled={picked !== null}
 				onclick={(e) => choose(i, e)}
 			>
@@ -71,7 +98,9 @@
 		color: var(--muted);
 		font-size: 0.95rem;
 		margin: 0 0 1rem;
-		animation: rise 0.5s both;
+	}
+	.figure {
+		animation: rise 0.42s both;
 	}
 	h2 {
 		margin: 0 0 1.25rem;
@@ -82,7 +111,7 @@
 	}
 	.pick-list > hr {
 		margin: 0 0 1.75rem;
-		animation: draw 0.5s 0.15s both;
+		animation: draw 0.4s both;
 	}
 	.grid {
 		display: grid;
@@ -101,7 +130,7 @@
 		border: 1px solid var(--border);
 		border-radius: var(--radius);
 		cursor: pointer;
-		animation: rise 0.45s calc(0.25s + var(--i) * 80ms) both;
+		animation: rise 0.42s both;
 		transition:
 			transform 0.12s ease,
 			border-color 0.12s ease,

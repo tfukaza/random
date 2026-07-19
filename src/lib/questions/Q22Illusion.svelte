@@ -10,14 +10,24 @@
 	// making it obvious which circle is actually bigger. Then we move on.
 	import { tweened } from 'svelte/motion';
 	import { cubicOut } from 'svelte/easing';
+	import SplitText from '$lib/SplitText.svelte';
+	import { cascade, ITEM_MS } from '$lib/reveal.js';
+	import { playSfx } from '$lib/audio/audio.svelte.js';
 	let { onAnswer } = $props();
+
+	const seq = $derived.by(() => {
+		const c = cascade();
+		return { prompt: c.text(prompt), rule: c.rule(), figure: c.block(), cards: c.items(options.length) };
+	});
 
 	const prompt = 'Which orange circle looks bigger?';
 
 	const options = [
-		{ label: 'The left circle', score: { connector: 3 } },
-		{ label: 'The right circle', score: { adventurer: 3 } },
-		{ label: 'They’re the same size', score: { sage: 3 } }
+		// left = contrarian (it's smaller AND illusion-shrunk); right = actually
+		// looked; "same" = pattern-matched the famous illusion and got burned.
+		{ label: 'The left circle', score: { risk: 2, scope: 1 } },
+		{ label: 'The right circle', score: { scope: -3 } },
+		{ label: 'They’re the same size', score: { scope: 2, risk: -1 } }
 	];
 
 	/** @type {number | null} */
@@ -29,6 +39,7 @@
 	/** @param {number} i */
 	function choose(i) {
 		picked = i;
+		void playSfx('illusion-reveal');
 		reveal.set(1, { delay: 200 });
 		// Let the reveal draw + a beat to absorb it, then advance.
 		setTimeout(() => onAnswer(options[i].score), 2600);
@@ -50,8 +61,8 @@
 </script>
 
 <div class="illusion">
-	<h2>{prompt}</h2>
-	<hr class="rule" />
+	<h2><SplitText text={prompt} delay={seq.prompt} /></h2>
+	<hr class="rule" style="animation-delay: {seq.rule}ms" />
 
 	<svg viewBox="0 0 640 260" role="img" aria-label="Two orange circles, each surrounded by gray circles">
 		{#each left.ring as p}
@@ -104,7 +115,7 @@
 			<button
 				class="card"
 				class:picked={picked === i}
-				style="--i: {i}"
+				style="animation-delay: {seq.cards + i * ITEM_MS}ms"
 				disabled={picked !== null}
 				onclick={() => choose(i)}
 			>
@@ -156,7 +167,7 @@
 		font: inherit;
 		color: inherit;
 		font-weight: 500;
-		animation: rise 0.45s calc(0.25s + var(--i) * 80ms) both;
+		animation: rise 0.42s both;
 		transition:
 			transform 0.12s ease,
 			border-color 0.12s ease,

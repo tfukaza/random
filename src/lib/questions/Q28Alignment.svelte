@@ -9,10 +9,17 @@
 	import { tweened } from 'svelte/motion';
 	import { cubicOut } from 'svelte/easing';
 	import SplitText from '$lib/SplitText.svelte';
+	import { cascade } from '$lib/reveal.js';
 	import { VIEW, CX, CY, SUN_R, PLANETS, MOON, polar, angleOf, norm } from '$lib/orbits.js';
 	import { approximateAngles } from '$lib/orbits.js';
+	import { playSfx } from '$lib/audio/audio.svelte.js';
 
 	let { onAnswer } = $props();
+
+	const seq = $derived.by(() => {
+		const c = cascade();
+		return { prompt: c.text(prompt), rule: c.rule(), sky: c.block(), actions: c.action() };
+	});
 
 	const prompt = 'What is your ideal planetary alignment?';
 
@@ -52,6 +59,7 @@
 	function grab(id, e) {
 		if (committed) return;
 		dragging = id;
+		void playSfx('drag-pickup');
 		/** @type {Element} */ (e.currentTarget).setPointerCapture?.(e.pointerId);
 		e.preventDefault();
 	}
@@ -66,6 +74,7 @@
 	}
 
 	function release() {
+		if (dragging) void playSfx('drop-valid', { rate: 1.12 });
 		dragging = null;
 	}
 
@@ -75,6 +84,7 @@
 		if (!delta || committed) return;
 		e.preventDefault();
 		setAngle(id, $angles[id] + delta);
+		void playSfx('slider-detent');
 	}
 
 	// Glide every body to where it actually is right now.
@@ -86,19 +96,26 @@
 	function commit() {
 		if (committed) return;
 		committed = true;
-		// Placeholder scoring: tightly clustered vs. evenly scattered planets.
+		// Tightly clustered vs. evenly scattered planets: herding everything to
+		// one side is a dramatic, composed gesture; even spacing is bookkeeping.
 		const spread = PLANETS.map((p) => $angles[p.id]).sort((a, b) => a - b);
 		const gaps = spread.map((v, i) => norm((spread[(i + 1) % spread.length] ?? v) - v));
 		const tight = Math.max(...gaps) > 200;
-		setTimeout(() => onAnswer(tight ? { connector: 3 } : { sage: 3 }), 900);
+		setTimeout(
+			() =>
+				onAnswer(
+					tight ? { creative: 2, risk: 1 } : { scope: -2 }
+				),
+			900
+		);
 	}
 </script>
 
 <svelte:window onpointermove={move} onpointerup={release} onpointercancel={release} />
 
 <div class="alignment" class:committed>
-	<h2><SplitText text={prompt} stagger={14} /></h2>
-	<hr class="rule" />
+	<h2><SplitText text={prompt} delay={seq.prompt} /></h2>
+	<hr class="rule" style="animation-delay: {seq.rule}ms" />
 
 	<svg
 		bind:this={svgEl}
@@ -154,7 +171,7 @@
 		</g>
 	</svg>
 
-	<div class="actions">
+	<div class="actions" style="animation-delay: {seq.actions}ms">
 		<button class="ghost" onclick={useToday} disabled={committed}>
 			Use today’s actual positions
 		</button>
@@ -235,6 +252,7 @@
 	}
 
 	.actions {
+		animation: rise 0.42s both;
 		display: flex;
 		flex-wrap: wrap;
 		justify-content: space-between;

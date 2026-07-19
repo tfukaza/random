@@ -3,8 +3,14 @@
 	// option renders as a strip of color swatches (no text — pure vibes) and
 	// auto-commits on click.
 	import SplitText from '$lib/SplitText.svelte';
+	import { cascade, ITEM_MS } from '$lib/reveal.js';
 
 	let { prompt, options, onAnswer, onPick = () => {} } = $props();
+
+	const seq = $derived.by(() => {
+		const c = cascade();
+		return { prompt: c.text(prompt), rule: c.rule(), items: c.items(options.length) };
+	});
 
 	/** @type {number | null} */
 	let picked = $state(null);
@@ -18,14 +24,14 @@
 </script>
 
 <div class="palette-pick">
-	<h2><SplitText text={prompt} stagger={14} /></h2>
-	<hr class="rule" />
+	<h2><SplitText text={prompt} delay={seq.prompt} /></h2>
+	<hr class="rule" style="animation-delay: {seq.rule}ms" />
 	<div class="grid">
 		{#each options as opt, i}
 			<button
 				class="card"
 				class:picked={picked === i}
-				style="--i: {i}"
+				style="animation-delay: {seq.items + i * ITEM_MS}ms"
 				disabled={picked !== null}
 				onclick={() => choose(i)}
 			>
@@ -44,6 +50,7 @@
 		line-height: 1.25;
 	}
 	.palette-pick > hr {
+		animation: draw 0.4s both;
 		margin: 0 0 1.75rem;
 	}
 	.grid {
@@ -60,7 +67,7 @@
 		border: 1px solid var(--border);
 		border-radius: var(--radius);
 		cursor: pointer;
-		animation: rise 0.45s calc(0.25s + var(--i) * 80ms) both;
+		animation: rise 0.42s both;
 		transition:
 			transform 0.12s ease,
 			border-color 0.12s ease,

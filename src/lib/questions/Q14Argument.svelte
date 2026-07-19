@@ -8,7 +8,8 @@
 
 	/** @param {number} value */
 	function toScore(value) {
-		return { sage: value };
+		// Replaying arguments move-by-move is detail orientation in its purest form.
+		return { scope: Math.max(-3, Math.min(3, 4 - value)) };
 	}
 </script>
 

@@ -11,10 +11,10 @@
 	const prompt = 'If you had to choose, which wallpaper looks best to you?';
 
 	const options = [
-		{ id: 'plain', label: 'Plain background', score: { sage: 3 } },
-		{ id: 'dots', label: 'Subtle pattern', score: { maker: 3 } },
-		{ id: 'crazy', label: 'Go crazy', score: { adventurer: 3 } },
-		{ id: 'gradient', label: 'Gradient', score: { connector: 3 } }
+		{ id: 'plain', label: 'Plain background', score: { creative: -2 } },
+		{ id: 'dots', label: 'Subtle pattern', score: { scope: -1 } },
+		{ id: 'crazy', label: 'Go crazy', score: { risk: 2, creative: 1 } },
+		{ id: 'gradient', label: 'Gradient', score: { creative: 1 } }
 	];
 
 	// The flying emojis for the "Go crazy" preview. Each gets its own lane,
@@ -33,7 +33,7 @@
 </script>
 
 <div class="wallpaper-pick">
-	<h2><SplitText text={prompt} stagger={14} /></h2>
+	<h2><SplitText text={prompt} /></h2>
 	<hr class="rule" />
 	<div class="grid">
 		{#each options as opt, i}

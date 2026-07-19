@@ -32,7 +32,7 @@
 		the strength to carry him. You agree he'll wait here for a rescue party. He's short on
 		everything, though, and anything would help.
 	</p>
-	<h2><SplitText text="Which item do you give him?" stagger={14} /></h2>
+	<h2><SplitText text="Which item do you give him?" /></h2>
 	<hr class="rule" />
 
 	{#if carried.length === 0}
@@ -40,7 +40,7 @@
 			class="card nothing"
 			class:picked={picked === 'nothing'}
 			disabled={picked !== null}
-			onclick={() => give('nothing', { sage: 1 })}
+			onclick={() => give('nothing', { coord: -1 })}
 		>
 			<span class="label">You have nothing to give him.</span>
 		</button>

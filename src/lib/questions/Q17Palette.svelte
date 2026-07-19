@@ -10,12 +10,12 @@
 
 	/** @type {Record<string, Record<string, number>>} */
 	const SCORES = {
-		neon: { adventurer: 3 },
-		'ugly-pg': { maker: 3 },
-		'ugly-mmt': { maker: 2 },
-		'pastel-blue': { connector: 3 },
-		'mono-orange': { connector: 2 },
-		earthy: { sage: 3 }
+		neon: { risk: 2, creative: 1 },
+		'ugly-pg': { creative: -2, risk: 1 },
+		'ugly-mmt': { creative: -2 },
+		'pastel-blue': { risk: -1 },
+		'mono-orange': { creative: 1, scope: -1 },
+		earthy: { creative: 1 }
 	};
 
 	// Swatch widths communicate each color's role at a glance: the base

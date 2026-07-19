@@ -10,10 +10,10 @@
 
 	/** @type {Record<string, Record<string, number>>} */
 	const SCORES = {
-		simple: { sage: 3 },
-		shadow: { connector: 3 },
-		bold: { adventurer: 3 },
-		bubbly: { maker: 3 }
+		simple: { creative: -1, scope: -1 },
+		shadow: {},
+		bold: { risk: 1 },
+		bubbly: { creative: 2 }
 	};
 
 	const options = BUTTON_VARIANTS.map((v) => ({

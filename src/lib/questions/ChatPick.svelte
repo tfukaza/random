@@ -117,7 +117,13 @@
 			onpointerleave={dragEnd}
 		>
 			{#each options as opt, i}
-				<button class="chip" class:sent={sent === i} disabled={sent !== null} onclick={() => choose(i)}>
+				<button
+					class="chip"
+					class:sent={sent === i}
+					data-sfx="chat-send"
+					disabled={sent !== null}
+					onclick={() => choose(i)}
+				>
 					{opt.label}
 				</button>
 			{/each}

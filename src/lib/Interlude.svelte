@@ -1,9 +1,15 @@
 <script>
 	// A breather between questions: no score, no № — just a message and a
 	// Continue button. Content comes from src/lib/interludes.js.
+	import { onMount } from 'svelte';
 	import SplitText from '$lib/SplitText.svelte';
+	import { playSfx } from '$lib/audio/audio.svelte.js';
 
 	let { message, onNext } = $props();
+
+	onMount(() => {
+		void playSfx('page-turn');
+	});
 </script>
 
 <div class="interlude">

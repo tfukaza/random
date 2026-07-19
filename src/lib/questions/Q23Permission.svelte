@@ -6,8 +6,12 @@
 	// discarded unread — only the allow/deny choice matters.
 	import { onMount } from 'svelte';
 	import SplitText from '$lib/SplitText.svelte';
+	import { textMs } from '$lib/reveal.js';
+	import { playSfx } from '$lib/audio/audio.svelte.js';
 
 	let { onAnswer } = $props();
+
+	const HEADING = 'Can you give me permission?';
 
 	/** @type {'waiting' | 'asking' | 'allowed' | 'denied' | 'unsupported'} */
 	let status = $state('waiting');
@@ -21,22 +25,24 @@
 		if (done) return;
 		done = true;
 		status = verdict;
+		void playSfx('ui-confirm', { rate: verdict === 'denied' ? 0.88 : 1 });
 		setTimeout(() => onAnswer(score), 1000);
 	}
 
 	function request() {
 		status = 'asking';
 		if (!('geolocation' in navigator)) {
-			finish({ sage: 1 }, 'unsupported');
+			finish({}, 'unsupported');
 			return;
 		}
 		navigator.geolocation.getCurrentPosition(
 			// granted — the coordinates are thrown away
-			() => finish({ connector: 3, adventurer: 1 }, 'allowed'),
+			() => finish({ risk: 2, social: 1 }, 'allowed'),
 			(err) => {
-				if (err.code === err.PERMISSION_DENIED) finish({ sage: 3 }, 'denied');
+				if (err.code === err.PERMISSION_DENIED)
+					finish({ risk: -2, scope: -1 }, 'denied');
 				// granted but no fix (timeout/unavailable) still means they said yes
-				else finish({ connector: 3, adventurer: 1 }, 'allowed');
+				else finish({ risk: 2, social: 1 }, 'allowed');
 			},
 			{ timeout: 8000, maximumAge: Infinity }
 		);
@@ -44,13 +50,15 @@
 
 	onMount(() => {
 		// heading animation (~1.2s incl. settle + letter stagger) + 1s of calm
-		const t = setTimeout(request, 2200);
+		// Derived, not hardcoded: the heading has to finish arriving before the
+		// native dialog covers it, and word-reveal timing changes with the text.
+		const t = setTimeout(request, textMs(HEADING) + 1000);
 		return () => clearTimeout(t);
 	});
 </script>
 
 <div class="permission">
-	<h2><SplitText text="Can you give me permission?" stagger={14} /></h2>
+	<h2><SplitText text={HEADING} /></h2>
 	<hr class="rule" />
 
 	<p class="status" class:visible={status !== 'waiting'}>

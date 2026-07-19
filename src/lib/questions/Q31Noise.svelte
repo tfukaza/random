@@ -8,16 +8,23 @@
 	// domain offset, so the channels drift apart into soft color regions instead of
 	// collapsing into grayscale.
 	import { makeNoise2D, fbm } from '$lib/perlin';
+	import SplitText from '$lib/SplitText.svelte';
+	import { cascade, ITEM_MS } from '$lib/reveal.js';
 
 	let { onAnswer } = $props();
+
+	const seq = $derived.by(() => {
+		const c = cascade();
+		return { prompt: c.text(prompt), rule: c.rule(), plate: c.block(), cards: c.items(options.length) };
+	});
 
 	const prompt = 'What do you see in here?';
 
 	const options = [
-		{ label: 'A cat', score: { connector: 3 } },
-		{ label: 'A cloud', score: { sage: 3 } },
-		{ label: 'A car', score: { maker: 3 } },
-		{ label: 'A house', score: { adventurer: 3 } }
+		{ label: 'A cat', score: { creative: 2 } },
+		{ label: 'A cloud', score: { scope: 2 } },
+		{ label: 'A car', score: { scope: -2, creative: -1 } },
+		{ label: 'A house', score: { creative: -1, social: 1 } }
 	];
 
 	// Render small and let CSS scale it up — the blur from upscaling is free and
@@ -34,7 +41,7 @@
 	let canvas = $state();
 
 	// One seed per mount, so every taker gets a different meaningless picture.
-	let seed = $state(Math.floor(Math.random() * 1e9));
+	const seed = Math.floor(Math.random() * 1e9);
 
 	/** @type {number | null} */
 	let picked = $state(null);
@@ -72,8 +79,6 @@
 	}
 
 	$effect(() => {
-		// Re-runs when `seed` changes (debug reroll).
-		seed;
 		paint();
 	});
 
@@ -85,27 +90,20 @@
 </script>
 
 <div class="noise-q">
-	<h2>{prompt}</h2>
-	<hr class="rule" />
+	<h2><SplitText text={prompt} delay={seq.prompt} /></h2>
+	<hr class="rule" style="animation-delay: {seq.rule}ms" />
 
-	<div class="plate">
+	<div class="plate" style="animation-delay: {seq.plate}ms">
 		<canvas bind:this={canvas} width={W} height={H} aria-label="An abstract field of colored noise"
 		></canvas>
 	</div>
-
-	{#if import.meta.env.DEV}
-		<div class="debug">
-			<button onclick={() => (seed = Math.floor(Math.random() * 1e9))}>reroll noise</button>
-			<span>seed {seed}</span>
-		</div>
-	{/if}
 
 	<div class="choices">
 		{#each options as opt, i}
 			<button
 				class="card"
 				class:picked={picked === i}
-				style="--i: {i}"
+				style="animation-delay: {seq.cards + i * ITEM_MS}ms"
 				disabled={picked !== null}
 				onclick={() => choose(i)}
 			>
@@ -139,23 +137,6 @@
 		height: auto;
 		aspect-ratio: 240 / 150;
 	}
-	.debug {
-		display: flex;
-		align-items: center;
-		gap: 0.75rem;
-		margin: -1.25rem 0 1.25rem;
-		font-size: 0.75rem;
-		color: var(--muted);
-	}
-	.debug button {
-		font: inherit;
-		padding: 0.25rem 0.6rem;
-		background: var(--surface);
-		border: 1px solid var(--border);
-		border-radius: var(--radius);
-		cursor: pointer;
-		color: inherit;
-	}
 	.choices {
 		display: grid;
 		grid-template-columns: repeat(2, 1fr);
@@ -172,7 +153,7 @@
 		color: inherit;
 		font-weight: 500;
 		font-size: 1.05rem;
-		animation: rise 0.45s calc(0.3s + var(--i) * 80ms) both;
+		animation: rise 0.42s both;
 		transition:
 			transform 0.12s ease,
 			border-color 0.12s ease,

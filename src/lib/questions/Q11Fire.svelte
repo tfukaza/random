@@ -12,19 +12,19 @@
 	const options = [
 		{
 			label: 'The duffel of cash — untraceable, and it is the entire point',
-			score: { maker: 3 }
+			score: { creative: -2, risk: 1 }
 		},
 		{
 			label: 'The passports and the keys to a car in another name',
-			score: { sage: 3 }
+			score: { scope: 2, creative: -1 }
 		},
 		{
 			label: 'The files proving you were not the only one stealing',
-			score: { adventurer: 3 }
+			score: { risk: 3, scope: 1 }
 		},
 		{
 			label: 'The photo of the people you can never contact again',
-			score: { connector: 3 }
+			score: { social: 3, risk: -1 }
 		}
 	];
 </script>

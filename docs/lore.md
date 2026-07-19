@@ -13,8 +13,17 @@ Rules of thumb:
   (palette), Q18 (button), Q19 (wallpaper) and Q20 (artistic side) are intentionally
   context-free preference questions. They have been considered for arc framing and
   explicitly kept plain. Don't convert them.
-- **Arc questions should be adjacent** in `src/lib/questions/index.js`. Consecutive
-  questions let a premise carry without re-explaining it.
+- **Questions are referenced by id, placed by `flowOrder`.** Every question has a
+  permanent id (`'q11'` = its filename number = its ledger key) in the registry in
+  `src/lib/questions/index.js`; play order is the `flowOrder` manifest in the same
+  file, and the displayed № is just the position there. Cross-references (ledger,
+  `interludes.js`) always use ids, so reordering is editing `flowOrder` and nothing
+  else.
+- **Scene arcs should be adjacent** in `flowOrder`. Consecutive questions let a
+  premise carry without re-explaining it (zombie: q26 → q27). The exception is a
+  recurring-obstacle arc like the delivery driver, whose beats each re-establish
+  in one line (q13, q54) — those may spread out so the courier keeps resurfacing
+  deeper into the absurdity curve.
 - **Establish, then assume.** The first question of an arc sets the scene in a short
   muted lead-in paragraph (see `Q26Backpack.svelte` `.premise`); later ones assume it
   and get straight to the situation.
@@ -68,21 +77,26 @@ its texture — wealth, hiding, paranoia):
 
 ## Arc 3 — The delivery driver
 
-A delivery driver with one order to deliver and an unreasonable, unshakeable commitment
-to delivering it. Increasingly absurd obstacles pile up. Quitting is never on the table.
+A courier with one order to deliver and an unreasonable, unshakeable commitment to
+delivering it. Increasingly absurd obstacles pile up. Quitting is never on the table.
 
-Tonally the comic relief of the three: the humor comes from the driver treating
+**They are on a bike**, established in Q13 — the order rides in a bag on their back, not
+in a passenger seat. Keep it that way: the bike is what makes stopping cheap, so every
+refusal to stop is a real choice rather than a logistical one. It also rules out
+car-shaped obstacles (no breakdowns, no parking, no traffic jams you can hide behind).
+
+Tonally the comic relief of the arcs: the humor comes from the courier treating
 genuinely serious events (a flood, a car chase, the end of the world) as logistics
 problems that must not delay the drop-off.
 
 This arc has the most repeatable question shape: **each question is one obstacle**, and
 the options are ways of getting through it. Escalate as the arc goes — a wrong address,
-then a broken-down car, then weather, then something that shouldn't be survivable — and
+then a shredded tyre, then weather, then something that shouldn't be survivable — and
 never offer "give up" as an option. Keep the food getting colder as a running gag.
 
 The scoring angle: options can differ by *how* you push through — improvise a fix
-(Maker), find a route nobody thought of (Adventurer), reason out the optimal call
-(Sage), or get someone else to help you (Connector).
+(`creative`), take the route nobody sane would (`risk`), reason out the optimal call
+(`scope` toward detail), or get someone else to help you (`coord`).
 
 ## Arc 4 — The lost dog
 
@@ -167,13 +181,55 @@ your notes is a hop away from a personality quiz.
 
 ## Adding an arc
 
-1. Decide where the arc sits in `index.js` and keep its questions adjacent.
+1. Decide where the arc sits in `flowOrder` (`src/lib/questions/index.js`) and keep
+   its questions adjacent (unless it's a recurring-obstacle arc — see rules of thumb).
 2. Write the first question with a `.premise` lead-in; later ones assume it.
 3. If a later question depends on an earlier answer, add a small `$state` module in
    `src/lib/questions/` and handle the empty case (see `Q27Survivor.svelte`).
 4. Add the arc to this file so other contributors extend it instead of duplicating it.
 
 ---
+
+## Absurd reprises
+
+A running gag: an early, perfectly normal question comes back much later with its
+**prompt verbatim and its options subtly scrambled** — each answer is built from the
+original's own phrase fragments in the wrong combinations. The taker half-recognizes
+the question but can't place what's off, which is a much better joke than an obviously
+silly option would be.
+
+A one-position rotation of the fragments is the usual way to generate them (Q41 is a
+clean example), but it's a starting point, not a constraint — Q42 crosses parts between
+non-adjacent options and introduces one new noun. **The only real rule is that it has
+to sound almost right.** Ship whichever permutation is funniest to read aloud.
+
+Built so far, both as breathers between heavier interactive formats:
+
+- **Q41PartyAgain** reprises **Q1Party** — the locations slide down a slot, so you can
+  be "the center of the kitchen", chat "one-on-one in the corner", or pet "the host's
+  dogs at home".
+- **Q42DecisionAgain** reprises **Q2Decision** — verbs and objects recombine across
+  each other, so you can "go with your pros-and-cons list", "make a list of everyone
+  you know", or "delay your gut".
+- **Q43RoughDayAgain** reprises **Q4RoughDay** — same object rotation. This one also
+  *escalates*: the diary option is now an AI clone of your own voice reciting it back
+  to you. Later reprises should keep doing that rather than only scrambling.
+
+A caveat learned on Q43: **the rotation is a tool, not a rule.** Its last slot came out
+mechanically as "call a close friend hard", which reads as broken English rather than
+as a joke, so it was rewritten to "have an intense conversation with a close friend" —
+unsettling in the right way while still being the same beat. If a slot lands as
+nonsense instead of comedy, rewrite that slot and note it in the file header.
+
+Conventions:
+
+- **Keep the prompt identical to the original.** The prompt is the anchor that makes
+  the option drift register as wrong.
+- **Copy the original's scores by position**, so structurally it is the same question.
+- **Say so in the file header**, with a before/after table. These read as typos to
+  anyone who doesn't know the bit — every reprise file carries a DO NOT "fix" note, and
+  new ones should too.
+- Place them well away from the original so the callback is faint rather than obvious.
 
 ## Answer-driven presentation
 
@@ -183,18 +239,61 @@ than what it asks. Two working examples:
 - **Q16–Q19 → Q20.** Font, palette, button style and wallpaper choices are applied to
   Q20, so good taste renders a handsome question and silly taste renders a hideous one.
   State lives in `src/lib/design/choices.svelte.js`.
-- **Q29 → Q30.** `Q29Patience.svelte` asks "How patient are you?" (1–7) and writes the
-  rating to `patienceState.svelte.js`. `Q30Media.svelte` asks the same question three
-  ways depending on it:
-  - **1–2** — RSVP speed-reader (`SpeedRead.svelte`): the prompt and each option blink
-    past once at 650 wpm, then you must answer with checkboxes labelled only 1–4.
-    An escape hatch ("Sorry — I actually prefer normal") switches to normal mode.
-  - **6–7** — the same words uncovered one every 2.4s, so the prompt takes over a
-    minute to finish arriving.
-  - **3–5 / null** — ordinary presentation. `null` covers deep-links, the same way
-    `Q27Survivor` handles an empty backpack.
+- **Q29 → every question until the next interlude.** `Q29Patience.svelte` asks "How
+  patient are you?" (1–7) and writes the rating to `patienceState.svelte.js`. That
+  rating then governs how *every following question is delivered*, until an interlude
+  clears it. Two pieces:
 
-  `Q30Media` carries a dev-only debug panel for forcing any of the three modes.
+  - **`PatienceLens.svelte`** (in `src/lib/`) wraps each question in the band. It
+    cannot know what question it's wrapping — there's no shared text or option schema
+    — so it works purely on the rendered box, which makes it apply to any question
+    ever added. Impatient (1–2): the question is legible for 1.8s, then blurs out and
+    stays blurred, still clickable. Patient (6–7): a downward mask wipe uncovers it
+    over 14s, with `pointer-events: none` until it finishes, so it genuinely can't be
+    answered early. Both offer the escape hatch, and taking it ends the bit for the
+    whole band (`patience.bailed`).
+  - **The band** is computed in `+page.svelte` from the flow — q29's index + 1 up to
+    the next interlude — not from hardcoded positions, so it survives reshuffles of
+    `flowOrder`. `patienceMode()` in the state module is the single source of truth
+    for the delivery mode.
+
+  **The band is bounded** by the "Thank you for your patience." interlude
+  (`interludes.js`, pinned `after: 'q24'`), placed between displayed questions 29
+  and 30, a handful of questions past q29
+  in `flowOrder` — the message doubles as the punchline for anyone who just sat
+  through the wipe. If q29 moves, keep that interlude's pin a few questions
+  downstream of it, or the lens runs to the end of the quiz.
 
 The general pattern: a `$state` module written by the earlier question, read by the
 later one, always with a sane fallback for the unset case.
+
+## Sequence-coupled questions
+
+A weaker but stricter coupling: some questions depend on the taker having just *seen*
+the previous one, without reading any state from it.
+
+- **Q38 → Q39.** `Q38Picnic` asks which of four fridge items you'd take to a picnic,
+  giving no hint that the list matters. `Q39Recall` then asks you to name those four
+  from eight, where each of the four decoys is a near-miss of a real item (orange and
+  lemon shadow the apple and banana, sports drink shadows the protein shake, meatball
+  shadows the BLT). Correct recall reads as detail-orientation (`scope` negative);
+  confidently picking items that were never there reads as gist-thinking and nerve
+  (`scope` positive, `risk`) — the honesty consequences land in Q40.
+
+  These two must stay **adjacent and in order** — Q39's prompt says "the previous
+  question" — and Q39's four real labels must match Q38's options verbatim. Don't slip
+  an interlude between them. Unlike the `$state` pairs above there's no fallback to
+  write: a deep-link straight to Q39 just means the taker is guessing, which is
+  acceptable for a debug tool.
+
+- **Q39 → Q40.** `Q40Memory` then asks, on a plain five-point agree/disagree scale,
+  whether you consider yourself to have a good memory. `Q39Recall` writes its verdict
+  to `recallState.svelte.js` (`correct` is true only for a clean sweep — all four real
+  items, nothing invented), and if you got it wrong the prompt gains one word: "Do you
+  *actually* consider yourself to have a good memory?" Correct answers, and deep-links
+  where `correct` is still `null`, get the straight-faced version, so the dig only
+  lands on people who earned it.
+
+  This is the general `$state` pattern rather than a pure sequence coupling, but it
+  still wants to sit immediately after Q39 — the barb only reads while the failure is
+  fresh.

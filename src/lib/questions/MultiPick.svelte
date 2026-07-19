@@ -3,8 +3,24 @@
 	// of chips (including zero), then hit submit to commit. Score deltas from
 	// every selected option are summed before being handed to onAnswer.
 	import SplitText from '$lib/SplitText.svelte';
+	import { cascade, ITEM_MS } from '$lib/reveal.js';
 
-	let { prompt, options, onAnswer } = $props();
+	// `onPick` is optional and fires on submit with the selected indices, for
+	// questions that need to judge *which* options were chosen rather than just
+	// bank their combined score (see Q39Recall).
+	let { prompt, options, onAnswer, onPick = () => {} } = $props();
+
+	// prompt → rule → chips → submit. The submit button waits for every chip
+	// to have finished arriving (see $lib/reveal.js).
+	const seq = $derived.by(() => {
+		const c = cascade();
+		return {
+			prompt: c.text(prompt),
+			rule: c.rule(),
+			chips: c.items(options.length),
+			submit: c.action()
+		};
+	});
 
 	let selected = $state(new Set());
 
@@ -23,23 +39,30 @@
 				delta[id] = (delta[id] ?? 0) + points;
 			}
 		}
+		onPick?.([...selected]);
 		onAnswer(delta); // empty delta is fine — "none of these" is a valid answer
 	}
 </script>
 
 <div class="multi-pick">
-	<h2><SplitText text={prompt} stagger={14} /></h2>
-	<hr class="rule" />
+	<h2><SplitText text={prompt} delay={seq.prompt} /></h2>
+	<hr class="rule" style="animation-delay: {seq.rule}ms" />
 	<div class="chips">
 		{#each options as opt, i}
-			<button class="chip" class:on={selected.has(i)} style="--i: {i}" onclick={() => toggle(i)}>
+			<button
+				class="chip"
+				data-sfx="ui-toggle"
+				class:on={selected.has(i)}
+				style="animation-delay: {seq.chips + i * ITEM_MS}ms"
+				onclick={() => toggle(i)}
+			>
 				<span class="box">{selected.has(i) ? '✓' : ''}</span>
 				<span class="label">{opt.label}</span>
 			</button>
 		{/each}
 	</div>
 
-	<button class="submit" onclick={submit}>
+	<button class="submit" onclick={submit} style="animation-delay: {seq.submit}ms">
 		{selected.size ? `Submit (${selected.size} selected) →` : 'Submit — none of these →'}
 	</button>
 </div>
@@ -54,7 +77,7 @@
 	}
 	.multi-pick > hr {
 		margin: 0 0 1.75rem;
-		animation: draw 0.5s 0.15s both;
+		animation: draw 0.4s both;
 	}
 	.chips {
 		display: flex;
@@ -74,7 +97,7 @@
 		cursor: pointer;
 		font: inherit;
 		color: inherit;
-		animation: rise 0.45s calc(0.25s + var(--i) * 80ms) both;
+		animation: rise 0.42s both;
 		transition:
 			border-color 0.12s ease,
 			background 0.12s ease;
@@ -106,6 +129,7 @@
 		font-weight: 500;
 	}
 	.submit {
+		animation: rise 0.42s both;
 		display: block;
 		margin-left: auto;
 		padding: 0.75rem 1.5rem;

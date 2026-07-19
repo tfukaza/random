@@ -3,8 +3,14 @@
 	// actual button in a distinct design idiom (variant class). Clicking a button
 	// both answers the question and demonstrates the style. Auto-commits on click.
 	import SplitText from '$lib/SplitText.svelte';
+	import { cascade, ITEM_MS } from '$lib/reveal.js';
 
 	let { prompt, options, onAnswer, onPick = () => {} } = $props();
+
+	const seq = $derived.by(() => {
+		const c = cascade();
+		return { prompt: c.text(prompt), rule: c.rule(), items: c.items(options.length) };
+	});
 
 	/** @type {number | null} */
 	let picked = $state(null);
@@ -18,11 +24,15 @@
 </script>
 
 <div class="button-pick">
-	<h2><SplitText text={prompt} stagger={14} /></h2>
-	<hr class="rule" />
+	<h2><SplitText text={prompt} delay={seq.prompt} /></h2>
+	<hr class="rule" style="animation-delay: {seq.rule}ms" />
 	<div class="grid">
 		{#each options as opt, i}
-			<div class="cell" class:dim={picked !== null && picked !== i}>
+			<div
+				class="cell"
+				class:dim={picked !== null && picked !== i}
+				style="animation-delay: {seq.items + i * ITEM_MS}ms"
+			>
 				<button
 					class="btn {opt.variant}"
 					disabled={picked !== null}
@@ -42,7 +52,11 @@
 		line-height: 1.25;
 	}
 	.button-pick > hr {
+		animation: draw 0.4s both;
 		margin: 0 0 1.75rem;
+	}
+	.cell {
+		animation: rise 0.42s both;
 	}
 	.grid {
 		display: grid;

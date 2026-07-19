@@ -12,11 +12,11 @@
 
 	/** @type {Record<string, Record<string, number>>} */
 	const SCORES = {
-		poppins: { connector: 3 },
-		playfair: { sage: 3 },
-		comic: { adventurer: 3 },
-		bitcount: { maker: 3 },
-		plexmono: { sage: 2 }
+		poppins: { creative: -1 },
+		playfair: { creative: 1 },
+		comic: { risk: 2, creative: -2 },
+		bitcount: { creative: 2 },
+		plexmono: { scope: -2 }
 	};
 
 	const options = FONTS.map((f) => ({ label: text, font: f.css, score: SCORES[f.id] }));

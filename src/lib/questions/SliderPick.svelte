@@ -3,16 +3,38 @@
 	// component hands us a prompt, a min/max range, pole labels, and a scoring
 	// function that maps the final value to a score delta.
 	import SplitText from '$lib/SplitText.svelte';
+	import { cascade } from '$lib/reveal.js';
 
 	// `premise` is optional scene-setting shown above the prompt — used by lore
 	// arc questions (see docs/lore.md); plain questions just omit it.
+	//
+	// `step`, `format` and `children` are also optional, so the plain 1–7 callers
+	// (Q13, Q14, Q29, Q48) are unaffected. `children` is a snippet handed the live
+	// value, rendered between the rule and the slider — that's the hook for a
+	// question that wants a picture reacting as you drag (see Q49).
+	/** @type {{
+	 *   premise?: string,
+	 *   prompt: string,
+	 *   min?: number,
+	 *   max?: number,
+	 *   step?: number,
+	 *   leftLabel: string,
+	 *   rightLabel: string,
+	 *   format?: (value: number) => string,
+	 *   children?: import('svelte').Snippet<[number]>,
+	 *   toScore: (value: number) => Record<string, number>,
+	 *   onAnswer: (delta: Record<string, number>) => void
+	 * }} */
 	let {
 		premise = '',
 		prompt,
 		min = 0,
 		max = 10,
+		step = 1,
 		leftLabel,
 		rightLabel,
+		format = (v) => String(v),
+		children,
 		toScore,
 		onAnswer
 	} = $props();
@@ -24,24 +46,53 @@
 	function commit() {
 		onAnswer(toScore(value));
 	}
+
+	// premise → prompt → rule → figure → pole labels → slider → readout → Next.
+	// `action()` deliberately waits for everything above to have *finished*, so
+	// the button never sits there inviting an answer to a half-read question.
+	const seq = $derived.by(() => {
+		const c = cascade();
+		return {
+			premise: premise ? c.text(premise) : 0,
+			prompt: c.text(prompt),
+			rule: c.rule(),
+			figure: children ? c.block() : 0,
+			poles: c.block(),
+			slider: c.block(),
+			readout: c.block(),
+			next: c.action()
+		};
+	});
 </script>
 
 <div class="slider-pick">
 	{#if premise}
-		<p class="premise">{premise}</p>
+		<p class="premise"><SplitText text={premise} delay={seq.premise} /></p>
 	{/if}
-	<h2><SplitText text={prompt} stagger={14} /></h2>
-	<hr class="rule" />
+	<h2><SplitText text={prompt} delay={seq.prompt} /></h2>
+	<hr class="rule" style="animation-delay: {seq.rule}ms" />
 
-	<div class="poles">
+	{#if children}
+		<div class="figure" style="animation-delay: {seq.figure}ms">{@render children(value)}</div>
+	{/if}
+
+	<div class="poles" style="animation-delay: {seq.poles}ms">
 		<span class="pole">{leftLabel}</span>
 		<span class="pole">{rightLabel}</span>
 	</div>
 
-	<input class="slider" type="range" {min} {max} bind:value />
-	<p class="readout">{value}</p>
+	<input
+		class="slider"
+		type="range"
+		{min}
+		{max}
+		{step}
+		bind:value
+		style="animation-delay: {seq.slider}ms"
+	/>
+	<p class="readout" style="animation-delay: {seq.readout}ms">{format(value)}</p>
 
-	<button class="next" onclick={commit}>Next →</button>
+	<button class="next" onclick={commit} style="animation-delay: {seq.next}ms">Next →</button>
 </div>
 
 <style>
@@ -49,7 +100,9 @@
 		color: var(--muted);
 		font-size: 0.95rem;
 		margin: 0 0 1rem;
-		animation: rise 0.5s both;
+	}
+	.figure {
+		animation: rise 0.42s both;
 	}
 	h2 {
 		margin: 0 0 1.25rem;
@@ -60,7 +113,7 @@
 	}
 	.slider-pick > hr {
 		margin: 0 0 1.75rem;
-		animation: draw 0.5s 0.15s both;
+		animation: draw 0.4s both;
 	}
 	.poles {
 		display: flex;
@@ -69,12 +122,14 @@
 		color: var(--muted);
 		margin-bottom: 0.75rem;
 		gap: 1rem;
+		animation: rise 0.42s both;
 	}
 	.slider {
 		width: 100%;
 		accent-color: var(--ink);
 		height: 2rem;
 		cursor: pointer;
+		animation: rise 0.42s both;
 	}
 	.readout {
 		text-align: center;
@@ -83,6 +138,7 @@
 		font-size: 1.5rem;
 		font-variant-numeric: tabular-nums;
 		margin: 0.75rem 0 2rem;
+		animation: rise 0.42s both;
 	}
 	.next {
 		display: block;
@@ -95,6 +151,7 @@
 		font: inherit;
 		font-weight: 600;
 		cursor: pointer;
+		animation: rise 0.42s both;
 		transition: background 0.25s ease;
 	}
 	.next:hover {

@@ -5,12 +5,12 @@
 
 	const prompt = 'If you could only eat one meal a day for the next year, which would you make it?';
 	const options = [
-		{ label: 'Breakfast', score: { sage: 3 } },
-		{ label: 'Brunch', score: { connector: 3 } },
-		{ label: 'Lunch', score: { maker: 3 } },
-		{ label: 'Linner', score: { maker: 3 } },
-		{ label: 'Dinner', score: { connector: 3 } },
-		{ label: 'Late-night meal', score: { adventurer: 3 } }
+		{ label: 'Breakfast', score: { scope: -1, tempo: -1 } },
+		{ label: 'Brunch', score: { social: 2 } },
+		{ label: 'Lunch', score: { creative: -1 } },
+		{ label: 'Linner', score: { creative: 2 } },
+		{ label: 'Dinner', score: { social: 1 } },
+		{ label: 'Late-night meal', score: { risk: 1, social: -1 } }
 	];
 </script>
 

@@ -4,10 +4,22 @@
 	// There's more supply than pack — what you choose to carry is the answer,
 	// and the packed list carries over to Q27 via the shared pack state.
 	import SplitText from '$lib/SplitText.svelte';
+	import { cascade } from '$lib/reveal.js';
 	import { ITEMS } from './backpackItems.js';
 	import { pack } from './backpackState.svelte.js';
+	import { playSfx } from '$lib/audio/audio.svelte.js';
+
+	const PROMPT =
+		'You found a safe house with supplies, but you must move — now. Your backpack only fits so much. What do you take?';
 
 	let { onAnswer } = $props();
+
+	// prompt → rule → grid → "grab it and go" (last, per $lib/reveal.js).
+	const seq = (() => {
+		const c = cascade();
+		c.text(PROMPT, 40);
+		return { rule: c.rule(), layout: c.block(), leave: c.action() };
+	})();
 
 	const ROWS = 3;
 	const COLS = 4;
@@ -79,6 +91,7 @@
 			placements = rest;
 		}
 		dragging = { id, x: e.clientX, y: e.clientY };
+		void playSfx('drag-pickup');
 		updatePreview(e.clientX, e.clientY);
 		window.addEventListener('pointermove', onMove);
 		window.addEventListener('pointerup', onUp);
@@ -90,9 +103,11 @@
 		updatePreview(e.clientX, e.clientY);
 	}
 	function onUp() {
+		const valid = !!dragging && !!preview?.valid;
 		if (dragging && preview?.valid) {
 			placements = { ...placements, [dragging.id]: { row: preview.row, col: preview.col } };
 		}
+		if (dragging) void playSfx(valid ? 'drop-valid' : 'drop-invalid');
 		dragging = null;
 		preview = null;
 		window.removeEventListener('pointermove', onMove);
@@ -126,13 +141,8 @@
 		The zombie apocalypse came and went. Most people didn't make it — you're one of the few
 		survivors, roaming a desolate world, looking for the others.
 	</p>
-	<h2>
-		<SplitText
-			text="You found a safe house with supplies, but you must move — now. Your backpack only fits so much. What do you take?"
-			stagger={5}
-		/>
-	</h2>
-	<hr class="rule" />
+	<h2><SplitText text={PROMPT} stagger={40} delay={0} /></h2>
+	<hr class="rule" style="animation-delay: {seq.rule}ms" />
 
 	<div class="layout">
 		<div class="pack">
@@ -191,7 +201,7 @@
 		</div>
 	{/if}
 
-	<button class="leave" onclick={leave} disabled={committed}>
+	<button class="leave" onclick={leave} disabled={committed} style="animation-delay: {seq.leave}ms">
 		<span class="leave-label">{committed ? 'You sling the pack and run.' : 'Grab it and go'}</span>
 	</button>
 </div>
@@ -223,7 +233,7 @@
 		gap: 2rem;
 		align-items: flex-start;
 		margin-bottom: 1.75rem;
-		animation: rise 0.45s 0.3s both;
+		animation: rise 0.42s both;
 	}
 	.pack-label {
 		text-transform: uppercase;
@@ -348,6 +358,7 @@
 		background: rgba(252, 252, 251, 0.85);
 	}
 	.leave {
+		animation: rise 0.42s both;
 		position: relative;
 		overflow: hidden;
 		padding: 0.8rem 2rem;
