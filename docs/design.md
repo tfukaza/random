@@ -464,7 +464,18 @@ Conventions when scoring a new question:
   Blurb house rules: second person, certificate register, 30–60 words, all
   seven poles reflected, dishonest (D) blurbs undermine the taker ("we print
   your version, since you seem attached to it"), no two blurbs in a noun
-  group share an opening. `typeOf(scores)` → `{code, title, blurb, plant}`.
+  group share an opening.
+- **The reading** (`src/lib/readings.js`, all 128 individually authored) is
+  the second paragraph under the blurb — the one where the examiner sets the
+  rubric aside and says what they actually saw in you as a human. Rules:
+  45–80 words; **interpretation, not inventory** — lead with the 2–3 traits
+  that dominate the type and describe life consequences (the seven-pole rule
+  deliberately does NOT apply); axis vocabulary is banned, describe behaviour
+  instead; no two readings in a noun group open with the same word; a reading
+  never reuses its blurb's joke and never contradicts its facts; D readings
+  humanise the self-mythology the blurb mocks — no flattery, no cruelty.
+  `npm run verify:readings` enforces the mechanical rules.
+  `typeOf(scores)` → `{code, title, blurb, reading, plant}`.
 - **The plant.** The result card's headline identity is **not** the title —
   it is a **plant**, shown as a mounted specimen plate (photograph, common
   name, binomial in italic) with **no explanation of any kind**. That refusal

@@ -22,7 +22,7 @@
 		{ label: 'Inside the cherry cake in the fridge', score: { creative: 3, risk: 2, social: -1 } },
 		{ label: 'In the load of laundry you already have going', score: { scope: 2 } },
 		{
-			label: 'Under the stack of paper on the table',
+			label: 'Under this stack of paper on the table',
 			score: { creative: 2, honesty: -2, risk: -1 }
 		}
 	];

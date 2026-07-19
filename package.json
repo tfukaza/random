@@ -1,34 +1,37 @@
 {
-  "name": "personality-quiz",
-  "private": true,
-  "version": "0.0.1",
-  "type": "module",
-  "scripts": {
-    "dev": "vite dev",
-    "build": "vite build",
-    "preview": "vite preview",
-    "test": "node --test src/lib/questions/*.test.js",
-    "prepare": "svelte-kit sync || echo ''",
-    "check": "svelte-kit sync && svelte-check --tsconfig ./jsconfig.json",
-    "check:watch": "svelte-kit sync && svelte-check --tsconfig ./jsconfig.json --watch",
-    "verify:math": "node scripts/verify-math.js"
-  },
-  "devDependencies": {
-    "@sveltejs/adapter-auto": "^7.0.1",
-    "@sveltejs/kit": "^2.63.0",
-    "@sveltejs/vite-plugin-svelte": "^7.1.2",
-    "@types/node": "^26.1.1",
-    "@types/three": "^0.185.1",
-    "svelte": "^5.56.1",
-    "svelte-check": "^4.6.0",
-    "typescript": "^6.0.3",
-    "vite": "^8.0.16"
-  },
-  "dependencies": {
-    "@snap-engine/asset-base-svelte": "^0.4.4",
-    "@snap-engine/core": "^0.4.1",
-    "@snap-engine/snapsort": "^0.4.1",
-    "@snap-engine/snapsort-svelte": "^0.4.3",
-    "three": "^0.185.1"
-  }
+	"name": "personality-quiz",
+	"private": true,
+	"version": "0.2.0",
+	"type": "module",
+	"scripts": {
+		"dev": "vite dev --host",
+		"build": "vite build",
+		"preview": "vite preview",
+		"test": "node --test src/lib/questions/*.test.js src/lib/audio/*.test.js",
+		"prepare": "svelte-kit sync || echo ''",
+		"check": "svelte-kit sync && svelte-check --tsconfig ./jsconfig.json",
+		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./jsconfig.json --watch",
+		"verify:math": "node scripts/verify-math.js",
+		"verify:readings": "node scripts/verify-readings.js"
+	},
+	"devDependencies": {
+		"@sveltejs/adapter-auto": "^7.0.1",
+		"@sveltejs/kit": "^2.63.0",
+		"@sveltejs/vite-plugin-svelte": "^7.1.2",
+		"@types/howler": "^2.2.13",
+		"@types/node": "^26.1.1",
+		"@types/three": "^0.185.1",
+		"svelte": "^5.56.1",
+		"svelte-check": "^4.6.0",
+		"typescript": "^6.0.3",
+		"vite": "^8.0.16"
+	},
+	"dependencies": {
+		"@snap-engine/asset-base-svelte": "^0.4.4",
+		"@snap-engine/core": "^0.4.1",
+		"@snap-engine/snapsort": "^0.4.1",
+		"@snap-engine/snapsort-svelte": "^0.4.3",
+		"howler": "^2.2.4",
+		"three": "^0.185.1"
+	}
 }

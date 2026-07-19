@@ -7,7 +7,8 @@
 	const rangeValues = new WeakMap();
 
 	function unlock() {
-		if (active && audioState.enabled && !audioState.started) startAudio();
+		if (!active || !audioState.enabled) return;
+		audioState.started ? resumeAudio() : startAudio();
 	}
 
 	/** @param {MouseEvent} event */

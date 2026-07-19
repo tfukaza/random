@@ -56,7 +56,8 @@
 	let tryBeginTimer = () => {};
 
 	$effect(() => {
-		if (!audioState.enabled || audioState.musicTrack === 'asteroid') tryBeginTimer();
+		if (!audioState.enabled || audioState.musicTrack === 'asteroid' || audioState.musicFailed)
+			tryBeginTimer();
 	});
 
 	/** @param {Event} event */
@@ -462,6 +463,26 @@
 				});
 			}
 
+			// Pointer events arrive faster than the display refreshes, and every
+			// updateDamage() re-scores 18 targets, rewrites 18 labels, and reassigns a
+			// $state that re-sorts, re-filters and re-renders the ledger. Coalesce to
+			// at most one per frame. `flushDamage` is not optional: committing scores
+			// off `damage`, so a pending update must land before the score is taken.
+			let damageQueued = 0;
+			function queueDamage() {
+				if (damageQueued) return;
+				damageQueued = requestAnimationFrame(() => {
+					damageQueued = 0;
+					updateDamage();
+				});
+			}
+			function flushDamage() {
+				if (!damageQueued) return;
+				cancelAnimationFrame(damageQueued);
+				damageQueued = 0;
+				updateDamage();
+			}
+
 			rotatePlanet = (axis, angle) => {
 				if (phase !== 'active') return;
 				if (angle === 0) planetGroup.quaternion.identity();
@@ -470,15 +491,19 @@
 					planetGroup.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(vector, angle));
 					planetGroup.quaternion.normalize();
 				}
-				updateDamage();
+				queueDamage();
 			};
 
 			let pointerId = -1;
+			/** @type {DOMRect | null} */
+			let canvasRect = null;
 			/** @type {import('three').Vector3 | null} */
 			let previousArcball = null;
 			/** @param {PointerEvent} event */
 			function arcballPoint(event) {
-				const bounds = canvasElement.getBoundingClientRect();
+				// Cached per drag: this ran on every pointermove, and
+				// getBoundingClientRect() forces a synchronous layout each time.
+				const bounds = (canvasRect ??= canvasElement.getBoundingClientRect());
 				let x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
 				let y = 1 - ((event.clientY - bounds.top) / bounds.height) * 2;
 				const squared = x * x + y * y;
@@ -496,6 +521,7 @@
 			function pointerDown(event) {
 				if (phase !== 'active') return;
 				pointerId = event.pointerId;
+				canvasRect = null; // re-measure once at the start of each drag
 				previousArcball = arcballPoint(event);
 				canvasElement.setPointerCapture(pointerId);
 				canvasElement.classList.add('is-dragging');
@@ -510,7 +536,7 @@
 				const rotation = new THREE.Quaternion().setFromUnitVectors(previousArcball, current);
 				planetGroup.quaternion.premultiply(rotation).normalize();
 				previousArcball = current;
-				updateDamage();
+				queueDamage();
 			}
 			/** @param {PointerEvent} event */
 			function pointerUp(event) {
@@ -540,7 +566,12 @@
 				// A browser cannot autoplay a debug deep link. Hold the countdown at
 				// 30 until the first gesture unlocks the dedicated cue, then launch
 				// both clocks together so the authored silent tail stays in sync.
-				if (audioState.enabled && audioState.musicTrack !== 'asteroid') return;
+				if (
+					audioState.enabled &&
+					audioState.musicTrack !== 'asteroid' &&
+					!audioState.musicFailed
+				)
+					return;
 				deadline = performance.now() + pausedRemainingMs;
 				remaining = debugInfinite ? DEBUG_DISPLAY_SECONDS : pausedRemainingMs / 1000;
 				phase = 'active';
@@ -565,6 +596,9 @@
 
 			commitOrientation = (autoLocked) => {
 				if (phase !== 'active') return;
+				// A rotation from this same frame may still be queued, and the score is
+				// taken from `damage` on the next line.
+				flushDamage();
 				const timeLeft = debugInfinite
 					? pausedRemainingMs
 					: Math.max(0, deadline - performance.now());
@@ -602,11 +636,21 @@
 				camera.updateProjectionMatrix();
 				renderer.setSize(width, height, false);
 				labelRenderer.setSize(width, height);
+				canvasRect = null;
 			});
 			resizeObserver.observe(viewportElement);
 
 			updateDamage();
 			phase = 'ready';
+
+			// Reused every frame by the label-facing loop below.
+			const scratchNormal = new THREE.Vector3();
+			const scratchSurface = new THREE.Vector3();
+			const scratchToCamera = new THREE.Vector3();
+			/** @type {string[]} */
+			const lastVisibility = [];
+			/** @type {string[]} */
+			const lastOpacity = [];
 
 			renderer.setAnimationLoop((now) => {
 				if (disposed) return;
@@ -619,7 +663,6 @@
 					if (remaining > 0 && remaining <= 8 && warningSecond < lastWarningSecond) {
 						lastWarningSecond = warningSecond;
 						void playSfx('asteroid-warning', {
-							volume: 3,
 							rate: 1 + (8 - warningSecond) * 0.04
 						});
 					}
@@ -690,14 +733,29 @@
 					}
 				}
 
-				for (const visual of targetVisuals) {
-					const worldNormal = visual.localNormal.clone().applyQuaternion(planetGroup.quaternion);
-					const surfacePoint = worldNormal.clone().multiplyScalar(planetRadius);
-					const towardCamera = camera.position.clone().sub(surfacePoint).normalize();
-					const facing = worldNormal.dot(towardCamera);
+				// This ran three Vector3 clones per label per frame — 54 allocations a
+				// frame at 18 labels, all of it garbage — and wrote two inline styles
+				// per label whether or not anything had changed. Scratch vectors and a
+				// change check remove both.
+				for (let vi = 0; vi < targetVisuals.length; vi += 1) {
+					const visual = targetVisuals[vi];
+					scratchNormal.copy(visual.localNormal).applyQuaternion(planetGroup.quaternion);
+					scratchSurface.copy(scratchNormal).multiplyScalar(planetRadius);
+					scratchToCamera.copy(camera.position).sub(scratchSurface).normalize();
+					const facing = scratchNormal.dot(scratchToCamera);
 					const labelOpacity = Math.max(0, Math.min(1, (facing - 0.16) / 0.3));
-					visual.label.style.visibility = labelOpacity > 0 ? 'visible' : 'hidden';
-					visual.label.style.opacity = String(labelOpacity);
+					const visibility = labelOpacity > 0 ? 'visible' : 'hidden';
+					if (lastVisibility[vi] !== visibility) {
+						visual.label.style.visibility = visibility;
+						lastVisibility[vi] = visibility;
+					}
+					// Two decimals is well below what the eye resolves, and it stops a
+					// drifting float from invalidating styles every single frame.
+					const opacity = labelOpacity.toFixed(2);
+					if (lastOpacity[vi] !== opacity) {
+						visual.label.style.opacity = opacity;
+						lastOpacity[vi] = opacity;
+					}
 				}
 				renderer.render(scene, camera);
 				labelRenderer.render(scene, camera);

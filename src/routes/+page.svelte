@@ -15,13 +15,15 @@
 	import { emptyScores, mergeScores } from '$lib/scoring.js';
 	import AudioController from '$lib/audio/AudioController.svelte';
 	import SoundControl from '$lib/audio/SoundControl.svelte';
+	import { CURRENT_VERSION } from '$lib/releases.js';
 	import {
 		audioState,
 		hydrateAudioPreference,
 		setAudioEnabled,
 		setMusicRate,
 		setMusicTrack,
-		startAudio
+		startAudio,
+		stopMusic
 	} from '$lib/audio/audio.svelte.js';
 
 	// The quiz flow interleaves questions with interlude break cards: after the
@@ -174,11 +176,18 @@
 	}
 
 	function advance() {
+		const leaving = flow[index];
 		if (index + 1 < flow.length) {
 			index += 1;
 		} else {
 			phase = 'result';
 		}
+		const arriving = flow[index];
+		// Q50 owns a purpose-built score that ends with the impact. Keep the final
+		// breathing-space card silent; Result explicitly starts its own theme only
+		// after the taker presses Continue.
+		if (leaving?.kind === 'question' && leaving.id === 'q50' && arriving?.kind === 'interlude')
+			stopMusic();
 		if (patienceBand && (index >= patienceBand.to || phase === 'result')) scoreBandExit();
 		// An interlude is the bound on the bleeding: reaching one wipes the card.
 		if (flow[index]?.kind === 'interlude') clearStash();
@@ -240,6 +249,7 @@
 					<button class="start" onpointerdown={startAudio} onclick={start}
 						><span class="start-label">Begin</span></button
 					>
+					<a class="release-link" href="/releases">Release notes · v{CURRENT_VERSION}</a>
 				</section>
 			{:else if phase === 'quiz'}
 				<section class="quiz" in:scale={{ start: 0.98, duration: 400 }}>
@@ -297,6 +307,13 @@
 		justify-content: center;
 		align-items: flex-start;
 		padding: clamp(1.5rem, 5vw, 4rem) 1.25rem 4rem;
+		/* BloodPool spreads well wider than the certificate on purpose, which was
+		   making the document wider than the screen — and a page wider than the
+		   viewport renders shrunken on a phone. `clip` rather than `hidden`: hidden
+		   would force the vertical axis into a scroll container and break page
+		   scrolling, whereas clip cuts the horizontal spill only and leaves the
+		   pool free to run past the bottom edge. */
+		overflow-x: clip;
 	}
 	.sound-choice {
 		display: flex;
@@ -527,6 +544,21 @@
 	}
 	.start-label {
 		position: relative;
+	}
+	.release-link {
+		display: block;
+		width: max-content;
+		margin: 1.5rem auto -0.25rem;
+		color: var(--muted);
+		font-size: 0.72rem;
+		letter-spacing: 0.08em;
+		text-decoration-color: var(--rule);
+		text-underline-offset: 0.25em;
+		text-transform: uppercase;
+		animation: rise 0.5s 1.65s both;
+	}
+	.release-link:hover {
+		color: var(--ink);
 	}
 	.question-marker {
 		display: flex;

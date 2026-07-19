@@ -31,7 +31,7 @@
 	const ACT1_MS = 150;
 	const ACT2_MS = 4200;
 	const NAME_MS = ACT1_MS + 1400;
-	const AXIS_MS = ACT2_MS + 1400;
+	const AXIS_MS = ACT2_MS + 2300;
 	const AXIS_STEP_MS = 120;
 
 	// Bars start at 0 and grow to their real width one frame after mount.
@@ -101,6 +101,8 @@
 
 	<hr class="rule rule--scotch" />
 	<p class="blurb">{persona.blurb}</p>
+	<!-- The reading: where the certificate briefly becomes human. -->
+	<p class="reading">{persona.reading}</p>
 	<div class="fleuron" aria-hidden="true">
 		<hr class="rule" />
 		<span>❦</span>
@@ -243,6 +245,14 @@
 		text-align: left;
 		animation: rise 0.7s calc(var(--act2) + 0.4s) both;
 	}
+	.reading {
+		max-width: 46ch;
+		margin: 0 auto 1.75rem;
+		color: var(--muted);
+		line-height: 1.7;
+		font-size: 0.95rem;
+		animation: rise 0.7s calc(var(--act2) + 1s) both;
+	}
 	.blurb::first-letter {
 		font-family: 'Cormorant Garamond', Georgia, serif;
 		font-size: 2.9em;
@@ -261,13 +271,13 @@
 	}
 	.fleuron .rule {
 		flex: 1;
-		animation: draw 0.7s calc(var(--act2) + 1s) both;
+		animation: draw 0.7s calc(var(--act2) + 1.9s) both;
 	}
 	.fleuron span {
 		color: var(--ink);
 		font-size: 1.1rem;
 		line-height: 1;
-		animation: rise 0.6s calc(var(--act2) + 0.95s) both;
+		animation: rise 0.6s calc(var(--act2) + 1.85s) both;
 	}
 	.section-head {
 		text-transform: uppercase;
@@ -275,7 +285,7 @@
 		font-size: 0.72rem;
 		color: var(--muted);
 		margin: 0 0 1rem;
-		animation: rise 0.7s calc(var(--act2) + 1.25s) both;
+		animation: rise 0.7s calc(var(--act2) + 2.15s) both;
 	}
 	.spectra {
 		display: flex;
@@ -289,7 +299,7 @@
 		align-items: center;
 		gap: 0.75rem;
 		font-size: 0.8rem;
-		animation: rise 0.7s calc(var(--act2) + 1.4s + var(--i) * 120ms) both;
+		animation: rise 0.7s calc(var(--act2) + 2.3s + var(--i) * 120ms) both;
 	}
 	.pole {
 		color: var(--muted);
@@ -358,7 +368,7 @@
 		font: inherit;
 		font-weight: 600;
 		cursor: pointer;
-		animation: rise 0.7s calc(var(--act2) + 2.6s) both;
+		animation: rise 0.7s calc(var(--act2) + 3.5s) both;
 		transition: color 0.25s ease;
 	}
 	.ink-button::before {
@@ -408,7 +418,7 @@
 		font-size: 0.7rem;
 		color: var(--muted);
 		margin: 2rem 0 0;
-		animation: rise 0.7s calc(var(--act2) + 2.9s) both;
+		animation: rise 0.7s calc(var(--act2) + 3.8s) both;
 	}
 	/* Blind-embossed seal: no pigment, pure relief — the paper itself is
 	   pressed, so every visible edge comes from light and shadow. */
@@ -428,7 +438,7 @@
 			inset 0 -1px 2px rgba(0, 0, 0, 0.09),
 			inset 0 0 0 1px rgba(0, 0, 0, 0.04),
 			0 1px 1px rgba(0, 0, 0, 0.07);
-		animation: rise 0.7s calc(var(--act2) + 3.2s) both;
+		animation: rise 0.7s calc(var(--act2) + 4.1s) both;
 	}
 	.seal::before {
 		content: '';

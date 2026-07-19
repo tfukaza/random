@@ -24,6 +24,7 @@
 
 import { AXES } from '$lib/scoring.js';
 import { PLANTS } from '$lib/plants.js';
+import { READINGS } from '$lib/readings.js';
 
 /** Positive/negative letter per axis, in AXES order. */
 const LETTERS = [
@@ -95,7 +96,13 @@ export function typeOf(scores) {
 	const code = AXES.map((a, i) => ((scores[a.id] ?? 0) >= 0 ? LETTERS[i][0] : LETTERS[i][1])).join(
 		''
 	);
-	return { code, title: titleOf(code), blurb: PERSONALITIES[code], plant: plantFor(code) };
+	return {
+		code,
+		title: titleOf(code),
+		blurb: PERSONALITIES[code],
+		reading: READINGS[code],
+		plant: plantFor(code)
+	};
 }
 
 /**

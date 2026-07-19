@@ -4,7 +4,14 @@
 export const FONTS = [
 	{ id: 'poppins', label: 'Poppins', css: "'Poppins', sans-serif" },
 	{ id: 'playfair', label: 'Playfair Display', css: "'Playfair Display', serif" },
-	{ id: 'comic', label: 'Comic Sans', css: "'Comic Sans MS', 'Comic Sans', cursive" },
+	// iOS does not ship Comic Sans and maps generic `cursive` to a formal script
+	// face. Yomogi supplies the intended childlike look on every platform; the
+	// sans fallback avoids flashing that iOS script while the webfont loads.
+	{
+		id: 'comic',
+		label: 'Yomogi',
+		css: "'Yomogi', 'Comic Sans MS', 'Comic Sans', system-ui, sans-serif"
+	},
 	{ id: 'bitcount', label: 'Bitcount Single', css: "'Bitcount Single', system-ui" },
 	{ id: 'plexmono', label: 'IBM Plex Mono', css: "'IBM Plex Mono', monospace" }
 ];

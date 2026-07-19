@@ -11,6 +11,8 @@
 // Tone note (docs/design.md P6): this is the instrument reporting a finding,
 // not the quiz being pleased with itself. No "I got…", no exclamation marks.
 
+import { CURRENT_VERSION } from '$lib/releases.js';
+
 /** Cells either side of the centre line. */
 const CELLS = 5;
 
@@ -50,6 +52,7 @@ export function buildShareText(persona, axes) {
 
 	return [
 		'What kind of person are you?',
+		`Test version ${CURRENT_VERSION}`,
 		'',
 		`Type ${persona.code}`,
 		`${persona.plant.common} — ${persona.plant.scientific}`,
