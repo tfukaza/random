@@ -252,7 +252,7 @@
 						<input type="checkbox" checked={audioState.enabled} onchange={chooseSound} />
 						<span>Play with sound</span>
 					</label>
-					<button class="start" onpointerdown={startAudio} onclick={start}
+					<button class="start" onclick={start}
 						><span class="start-label">Begin</span></button
 					>
 					<a class="release-link" href="/releases">Release notes · v{CURRENT_VERSION}</a>

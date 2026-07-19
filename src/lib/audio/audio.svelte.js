@@ -6,6 +6,11 @@ import {
 	normalizeSfxRate,
 	normalizeSfxVolume
 } from './mix.js';
+import {
+	needsIosHtml5Audio,
+	preserveHowlsDuringMobileUnlock,
+	primeIosHtml5Music
+} from './howler-compat.js';
 
 const MUSIC = {
 	default: { path: '/audio/music/puzzle-chamber-loop.mp3', loop: true, rateSensitive: true },
@@ -66,6 +71,7 @@ const canceledSoundIds = new Set();
 let initialized = false;
 let hydrated = false;
 let preloadScheduled = false;
+let iosHtml5Audio = false;
 /** @type {keyof typeof MUSIC} */
 let desiredMusicTrack = 'default';
 /** @type {{ track: keyof typeof MUSIC, howl: Howl, id: number } | null} */
@@ -86,6 +92,8 @@ function warn(...args) {
 function ensureInitialized() {
 	if (initialized || typeof window === 'undefined') return initialized;
 	initialized = true;
+	preserveHowlsDuringMobileUnlock(Howler);
+	iosHtml5Audio = needsIosHtml5Audio(window.navigator);
 	Howler.autoUnlock = true;
 	Howler.autoSuspend = true;
 
@@ -95,6 +103,7 @@ function ensureInitialized() {
 		howl = new Howl({
 			src: [config.path],
 			format: ['mp3'],
+			html5: iosHtml5Audio,
 			loop: config.loop,
 			preload: false,
 			pool: 1,
@@ -141,6 +150,7 @@ function ensureInitialized() {
 		howl = new Howl({
 			src: [path],
 			format: ['mp3'],
+			html5: iosHtml5Audio,
 			preload: false,
 			pool: 8,
 			onloaderror: (_id, error) => warn(`Audio load failed: ${path}`, error),
@@ -202,6 +212,19 @@ function selectedMusicVolume() {
 	return musicVolume(desiredMusicTrack, audioState.rate, effectiveDuck());
 }
 
+/** Start iOS media while the current user gesture is still active. */
+function primeSelectedIosMusic() {
+	if (!iosHtml5Audio || completedMusicTrack === desiredMusicTrack) return;
+	const howl = musicHowls.get(desiredMusicTrack);
+	if (!howl || howl.state() === 'loaded') return;
+	const config = MUSIC[desiredMusicTrack];
+	primeIosHtml5Music(howl, {
+		volume: selectedMusicVolume(),
+		rate: config.rateSensitive ? normalizeMusicRate(audioState.rate, false) : 1,
+		loop: config.loop
+	});
+}
+
 function cancelMusicRateGlide() {
 	if (musicRateFrame) cancelAnimationFrame(musicRateFrame);
 	musicRateFrame = 0;
@@ -253,7 +276,11 @@ async function switchMusic(track, restart) {
 	const token = ++musicSwitchToken;
 	const howl = musicHowls.get(track);
 	if (!howl) return;
-	const loaded = await loadHowl(howl);
+	// Avoid crossing an `await` when the file is already ready. Safari requires
+	// the initial media play to remain on the synchronous stack of the tap that
+	// started the quiz; even awaiting an already-resolved promise loses that
+	// user activation.
+	const loaded = howl.state() === 'loaded' ? true : await loadHowl(howl);
 	if (token !== musicSwitchToken || desiredMusicTrack !== track) return;
 	if (!loaded) {
 		audioState.musicFailed = true;
@@ -291,7 +318,7 @@ async function switchMusic(track, restart) {
 	completedMusicTrack = '';
 	const volume = selectedMusicVolume();
 	const rate = MUSIC[track].rateSensitive
-		? normalizeMusicRate(audioState.rate, Howler.usingWebAudio)
+		? normalizeMusicRate(audioState.rate, Howler.usingWebAudio && !iosHtml5Audio)
 		: 1;
 	howl.volume(volume);
 	howl.rate(rate);
@@ -315,6 +342,7 @@ export function startAudio() {
 	audioState.started = true;
 	if (!ensureInitialized() || !audioState.enabled) return;
 	Howler.mute(false);
+	primeSelectedIosMusic();
 	void switchMusic(desiredMusicTrack, false);
 	resumeAudio();
 	schedulePreload();
@@ -336,7 +364,7 @@ export function setMusicRate(rate) {
 	const next = normalizeMusicRate(rate, true);
 	audioState.rate = next;
 	if (!activeMusic || !MUSIC[activeMusic.track].rateSensitive) return;
-	glideActiveMusicRate(normalizeMusicRate(next, Howler.usingWebAudio));
+	glideActiveMusicRate(normalizeMusicRate(next, Howler.usingWebAudio && !iosHtml5Audio));
 	updateMusicVolume(200);
 }
 
@@ -462,7 +490,7 @@ export function stopSfx(tag) {
 
 export function suspendAudio() {
 	if (!initialized) return;
-	if (Howler.usingWebAudio && Howler.ctx) {
+	if (!iosHtml5Audio && Howler.usingWebAudio && Howler.ctx) {
 		if (Howler.ctx.state === 'running') void Howler.ctx.suspend();
 		return;
 	}
@@ -480,7 +508,7 @@ export function suspendAudio() {
 export function resumeAudio() {
 	if (!audioState.enabled || !audioState.started || !ensureInitialized()) return;
 	Howler.mute(false);
-	if (Howler.usingWebAudio && Howler.ctx) {
+	if (!iosHtml5Audio && Howler.usingWebAudio && Howler.ctx) {
 		if (Howler.ctx.state === 'running') {
 			if (!activeMusic && completedMusicTrack !== desiredMusicTrack)
 				void switchMusic(desiredMusicTrack, false);

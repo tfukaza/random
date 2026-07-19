@@ -5,6 +5,24 @@
  */
 export const releases = [
 	{
+		version: '0.2.2',
+		date: 'July 18, 2026',
+		dateIso: '2026-07-18',
+		label: 'iPhone audio repair',
+		summary: 'Sound now uses a more reliable playback path on modern iPhones and iPads.',
+		sections: [
+			{
+				title: 'Fixed',
+				items: [
+					'iOS Safari now uses its native media playback path for quiz music and sound effects when Web Audio would remain silent.',
+					'Modern iPhones and iPads no longer discard every preloaded sound when their audio hardware runs at 48 kHz.',
+					'The opening score now starts once from the completed Begin tap, instead of playing briefly and being interrupted by Safari’s first-touch unlock.',
+					'Music tempo changes stay within Safari’s supported playback range so patient and impatient modes remain audible.'
+				]
+			}
+		]
+	},
+	{
 		version: '0.2.1',
 		date: 'July 19, 2026',
 		dateIso: '2026-07-19',
