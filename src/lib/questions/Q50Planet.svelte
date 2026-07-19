@@ -30,6 +30,13 @@
 	let debugInfinite = $state(false);
 	let damage = $state(displayPercentages(damageAt(IMPACT_DIRECTION)));
 	let failure = $state('');
+	let whiteout = $state(false);
+	let whiteoutLeft = $state(0);
+	let whiteoutTop = $state(0);
+	let whiteoutWidth = $state(0);
+	let whiteoutHeight = $state(0);
+	let whiteoutX = $state(0);
+	let whiteoutY = $state(0);
 
 	let sortedDamage = $derived([...damage].sort((a, b) => b.share - a.share));
 	let affectedDamage = $derived(sortedDamage.filter((item) => item.percent > 0));
@@ -523,8 +530,9 @@
 			let impactStarted = 0;
 			let finalScore = {};
 			let lastTimerPaint = 0;
-			let lastWarningSecond = 6;
+			let lastWarningSecond = 9;
 			let impactSoundPlayed = false;
+			let whiteoutStarted = false;
 			const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 			function beginTimer() {
@@ -608,9 +616,12 @@
 				if (phase === 'active' && !debugInfinite && now - lastTimerPaint > 50) {
 					remaining = Math.max(0, (deadline - now) / 1000);
 					const warningSecond = Math.ceil(remaining);
-					if (remaining > 0 && remaining <= 5 && warningSecond < lastWarningSecond) {
+					if (remaining > 0 && remaining <= 8 && warningSecond < lastWarningSecond) {
 						lastWarningSecond = warningSecond;
-						void playSfx('asteroid-warning', { rate: 1 + (5 - warningSecond) * 0.045 });
+						void playSfx('asteroid-warning', {
+							volume: 3,
+							rate: 1 + (8 - warningSecond) * 0.04
+						});
 					}
 					const approach = Math.max(0, Math.min(1, 1 - (deadline - now) / COUNTDOWN_MS));
 					asteroid.position.lerpVectors(asteroidStart, asteroidEnd, approach * 0.82);
@@ -628,6 +639,23 @@
 					if (progress >= 1) {
 						if (!impactSoundPlayed) {
 							impactSoundPlayed = true;
+							// The aftermath begins at the exact visual centre of the canvas,
+							// then expands across the surrounding certificate.
+							const viewportBounds = viewportElement.getBoundingClientRect();
+							const frameBounds =
+								viewportElement.closest('.frame')?.getBoundingClientRect() ?? viewportBounds;
+							const q50Bounds =
+								viewportElement.closest('.q50')?.getBoundingClientRect() ?? frameBounds;
+							// The overlay is positioned inside `.q50`, so its rectangle and its
+							// circle origin must both use that same coordinate space.
+							whiteoutLeft = frameBounds.left - q50Bounds.left;
+							whiteoutTop = frameBounds.top - q50Bounds.top;
+							whiteoutWidth = frameBounds.width;
+							whiteoutHeight = frameBounds.height;
+							whiteoutX =
+								viewportBounds.left + viewportBounds.width / 2 - frameBounds.left;
+							whiteoutY =
+								viewportBounds.top + viewportBounds.height / 2 - frameBounds.top;
 							void playSfx('asteroid-impact', { tag: 'asteroid-impact' });
 						}
 						asteroid.visible = false;
@@ -637,6 +665,10 @@
 						debris.visible = !reduceMotion;
 						const explosionElapsed = Math.max(0, elapsed - travelDuration);
 						const explosionSeconds = explosionElapsed / 1000;
+						if (explosionElapsed >= 180 && !whiteoutStarted) {
+							whiteoutStarted = true;
+							whiteout = true;
+						}
 						const pulseProgress = Math.min(1, explosionElapsed / (reduceMotion ? 80 : 420));
 						pulse.scale.setScalar(1 + pulseProgress * 8);
 						pulseMaterial.opacity = 1 - pulseProgress;
@@ -650,7 +682,7 @@
 							debrisMaterial.opacity = Math.max(0, 0.9 - explosionElapsed / 4600);
 						}
 					}
-					const totalDuration = travelDuration + 4000;
+					const totalDuration = travelDuration + 3800;
 					if (elapsed >= totalDuration && !answerSent) {
 						answerSent = true;
 						phase = 'resolved';
@@ -721,6 +753,13 @@
 </script>
 
 <section class="q50">
+	{#if whiteout}
+		<div
+			class="whiteout"
+			style="left: {whiteoutLeft}px; top: {whiteoutTop}px; width: {whiteoutWidth}px; height: {whiteoutHeight}px; --impact-x: {whiteoutX}px; --impact-y: {whiteoutY}px"
+			aria-hidden="true"
+		></div>
+	{/if}
 	<p class="premise">
 		You created this world. It is inhabited. An asteroid will strike in thirty seconds. It
 		cannot be diverted. You may rotate the planet.
@@ -783,7 +822,26 @@
 
 <style>
 	.q50 {
+		position: relative;
 		animation: rise 0.45s both;
+	}
+	.whiteout {
+		position: absolute;
+		z-index: 20;
+		background: #fff;
+		clip-path: circle(0 at var(--impact-x) var(--impact-y));
+		pointer-events: none;
+		animation: impact-whiteout 3s cubic-bezier(0.3, 0, 0.2, 1) forwards;
+	}
+	@keyframes impact-whiteout {
+		to {
+			clip-path: circle(200vmax at var(--impact-x) var(--impact-y));
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.whiteout {
+			animation-duration: 120ms;
+		}
 	}
 	.premise {
 		color: var(--muted);
