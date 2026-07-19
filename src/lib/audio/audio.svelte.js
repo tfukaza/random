@@ -1,5 +1,6 @@
 import { Howl, Howler } from 'howler';
 import {
+	glidingMusicRate,
 	musicVolume,
 	normalizeMusicRate,
 	normalizeSfxRate,
@@ -37,6 +38,7 @@ const SFX = {
 const STORAGE_KEY = 'personality-quiz-sound';
 const CORE = ['ui-tap', 'ui-toggle', 'ui-confirm', 'slider-detent', 'drag-pickup', 'drop-valid'];
 const MUSIC_FADE_MS = 140;
+const MUSIC_RATE_GLIDE_MS = 1000;
 
 export const audioState = $state({
 	enabled: true,
@@ -71,6 +73,7 @@ let activeMusic = null;
 /** @type {keyof typeof MUSIC | ''} */
 let completedMusicTrack = '';
 let musicSwitchToken = 0;
+let musicRateFrame = 0;
 let htmlMusicPaused = false;
 /** @type {Set<string>} */
 const htmlTagsPaused = new Set();
@@ -199,6 +202,36 @@ function selectedMusicVolume() {
 	return musicVolume(desiredMusicTrack, audioState.rate, effectiveDuck());
 }
 
+function cancelMusicRateGlide() {
+	if (musicRateFrame) cancelAnimationFrame(musicRateFrame);
+	musicRateFrame = 0;
+}
+
+/** @param {number} target */
+function glideActiveMusicRate(target) {
+	if (!activeMusic || !MUSIC[activeMusic.track].rateSensitive) return;
+	const music = activeMusic;
+	const from = Number(music.howl.rate(music.id));
+	if (!Number.isFinite(from) || Math.abs(from - target) < 0.001) {
+		cancelMusicRateGlide();
+		music.howl.rate(target, music.id);
+		return;
+	}
+	cancelMusicRateGlide();
+	const startedAt = performance.now();
+	const step = (/** @type {number} */ now) => {
+		if (activeMusic !== music) {
+			musicRateFrame = 0;
+			return;
+		}
+		const progress = Math.min(1, (now - startedAt) / MUSIC_RATE_GLIDE_MS);
+		music.howl.rate(glidingMusicRate(from, target, progress), music.id);
+		if (progress < 1) musicRateFrame = requestAnimationFrame(step);
+		else musicRateFrame = 0;
+	};
+	musicRateFrame = requestAnimationFrame(step);
+}
+
 /** @param {number} [duration] */
 function updateMusicVolume(duration = 120) {
 	if (!activeMusic || activeMusic.track !== desiredMusicTrack) return;
@@ -235,6 +268,7 @@ async function switchMusic(track, restart) {
 	}
 	if (completedMusicTrack === track && !restart) return;
 
+	cancelMusicRateGlide();
 	const previous = activeMusic;
 	activeMusic = null;
 	audioState.musicTrack = '';
@@ -302,7 +336,7 @@ export function setMusicRate(rate) {
 	const next = normalizeMusicRate(rate, true);
 	audioState.rate = next;
 	if (!activeMusic || !MUSIC[activeMusic.track].rateSensitive) return;
-	activeMusic.howl.rate(normalizeMusicRate(next, Howler.usingWebAudio), activeMusic.id);
+	glideActiveMusicRate(normalizeMusicRate(next, Howler.usingWebAudio));
 	updateMusicVolume(200);
 }
 
@@ -335,6 +369,7 @@ export async function setMusicTrack(id, { restart = false } = {}) {
  */
 export function stopMusic() {
 	musicSwitchToken += 1;
+	cancelMusicRateGlide();
 	completedMusicTrack = desiredMusicTrack;
 	const previous = activeMusic;
 	activeMusic = null;

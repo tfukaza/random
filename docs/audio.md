@@ -22,6 +22,9 @@ volume above `1`. The default loop has its maximum patient-mode gain (`1.12 × 1
 and -3 dB safety ceiling baked in; Howler plays that file at `0.667` normally, `1.0`
 at one-third speed, and `0.48` at 5× speed. The asteroid and report tracks have their
 previous `1.28` and `0.768` gains baked in and always play at their authored rate.
+Changes between patience playback rates use a one-second exponential pitch glide, matching
+the record-like wind-down of the original Web Audio implementation instead of stepping
+instantly between rates.
 
 ## Sound effects
 

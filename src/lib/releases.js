@@ -5,6 +5,22 @@
  */
 export const releases = [
 	{
+		version: '0.2.1',
+		date: 'July 19, 2026',
+		dateIso: '2026-07-19',
+		label: 'Audio polish',
+		summary: 'A small follow-up that restores two missing musical transitions.',
+		sections: [
+			{
+				title: 'Fixed',
+				items: [
+					'Fast music now winds down like a slowing record when normal speed is restored.',
+					'Taking the quiz again now stops the report theme before the opening music restarts.'
+				]
+			}
+		]
+	},
+	{
 		version: '0.2',
 		date: 'July 19, 2026',
 		dateIso: '2026-07-19',

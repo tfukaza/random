@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+	glidingMusicRate,
 	MUSIC_RATES,
 	musicVolume,
 	normalizeMusicRate,
@@ -19,6 +20,14 @@ test('normalizes the three authored music rates without non-finite values', () =
 test('keeps the HTML audio fallback inside Howler documented rates', () => {
 	assert.equal(normalizeMusicRate(1 / 3, false), 0.5);
 	assert.equal(normalizeMusicRate(5, false), 4);
+});
+
+test('glides music rate like a record settling back to speed', () => {
+	assert.equal(glidingMusicRate(5, 1, 0), 5);
+	assert.equal(glidingMusicRate(5, 1, 1), 1);
+	const halfway = glidingMusicRate(5, 1, 0.5);
+	assert.ok(halfway > 1 && halfway < 3);
+	assert.equal(glidingMusicRate(Number.NaN, 1, 0), 1);
 });
 
 test('reconstructs the remastered default music mix and applies ducking', () => {

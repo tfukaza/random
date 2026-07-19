@@ -142,8 +142,14 @@
 
 	function start() {
 		const restarting = phase === 'result';
-		startAudio();
-		if (restarting) void setMusicTrack('default', { restart: true });
+		if (restarting) {
+			// End the report score synchronously before Result unmounts; asking for
+			// another track alone leaves the report audible during its async handoff.
+			stopMusic();
+			void setMusicTrack('default', { restart: true });
+		} else {
+			startAudio();
+		}
 		scores = emptyScores();
 		index = 0;
 		phase = 'quiz';

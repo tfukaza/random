@@ -18,6 +18,24 @@ export function normalizeMusicRate(value, usingWebAudio = true) {
 }
 
 /**
+ * Exponential easing approximates the old AudioParam `setTargetAtTime` glide:
+ * most of the pitch change happens early, then the record audibly settles onto
+ * its exact final speed.
+ * @param {number} from
+ * @param {number} to
+ * @param {number} progress
+ */
+export function glidingMusicRate(from, to, progress) {
+	const safeFrom = Number.isFinite(from) && from > 0 ? from : 1;
+	const safeTo = Number.isFinite(to) && to > 0 ? to : 1;
+	const p = Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : 1;
+	if (p === 0) return safeFrom;
+	if (p === 1) return safeTo;
+	const eased = (1 - Math.exp(-5 * p)) / (1 - Math.exp(-5));
+	return safeFrom + (safeTo - safeFrom) * eased;
+}
+
+/**
  * The default score was remastered at its loudest (slow-mode) gain. These
  * values reconstruct the previous normal, patient, and impatient mix without
  * asking Howler for a volume above 1.
