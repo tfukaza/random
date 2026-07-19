@@ -4,41 +4,43 @@ export const MUSIC_RATES = Object.freeze({
 	fast: 5
 });
 
-/**
- * Preserve the authored 1/3x and 5x modes on Web Audio. Howler's HTML audio
- * fallback uses its documented-safe range so an old browser stays audible.
- * @param {number} value
- * @param {boolean} [usingWebAudio]
- */
-export function normalizeMusicRate(value, usingWebAudio = true) {
+/** Preserve the three authored playback modes and reject invalid input. */
+export function normalizeMusicRate(/** @type {number} */ value) {
 	const finite = Number.isFinite(value) ? value : 1;
-	const requested = finite < 0.5 ? MUSIC_RATES.slow : finite >= 4 ? MUSIC_RATES.fast : 1;
-	if (usingWebAudio) return requested;
-	return requested === MUSIC_RATES.slow ? 0.5 : requested === MUSIC_RATES.fast ? 4 : 1;
+	return finite < 0.5 ? MUSIC_RATES.slow : finite >= 4 ? MUSIC_RATES.fast : 1;
 }
 
 /**
- * Exponential easing approximates the old AudioParam `setTargetAtTime` glide:
- * most of the pitch change happens early, then the record audibly settles onto
- * its exact final speed.
- * @param {number} from
- * @param {number} to
- * @param {number} progress
+ * Schedule a live music-rate transition on one native AudioParam. Setting the
+ * exact endpoint matters: Safari can otherwise remain infinitesimally off the
+ * requested rate after a setTargetAtTime glide, and a later reversal starts
+ * from that stale automation.
+ *
+ * @param {{ value: number, cancelScheduledValues: (time: number) => unknown, setValueAtTime: (value: number, time: number) => unknown, setTargetAtTime: (value: number, time: number, constant: number) => unknown }} param
+ * @param {number} rate
+ * @param {number} now
+ * @param {number} [duration]
  */
-export function glidingMusicRate(from, to, progress) {
-	const safeFrom = Number.isFinite(from) && from > 0 ? from : 1;
-	const safeTo = Number.isFinite(to) && to > 0 ? to : 1;
-	const p = Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : 1;
-	if (p === 0) return safeFrom;
-	if (p === 1) return safeTo;
-	const eased = (1 - Math.exp(-5 * p)) / (1 - Math.exp(-5));
-	return safeFrom + (safeTo - safeFrom) * eased;
+export function scheduleMusicRate(param, rate, now, duration = 1) {
+	const target = normalizeMusicRate(rate);
+	const current = Number.isFinite(param.value) && param.value > 0 ? param.value : 1;
+	const start = Number.isFinite(now) ? Math.max(0, now) : 0;
+	const seconds = Number.isFinite(duration) ? Math.max(0, duration) : 0;
+	param.cancelScheduledValues(start);
+	param.setValueAtTime(current, start);
+	if (seconds === 0) {
+		param.setValueAtTime(target, start);
+		return target;
+	}
+	param.setTargetAtTime(target, start, Math.max(0.01, seconds / 5));
+	param.setValueAtTime(target, start + seconds);
+	return target;
 }
 
 /**
  * The default score was remastered at its loudest (slow-mode) gain. These
  * values reconstruct the previous normal, patient, and impatient mix without
- * asking Howler for a volume above 1.
+ * asking the native gain graph for a value above 1.
  * @param {'default' | 'asteroid' | 'report'} track
  * @param {number} rate
  * @param {number} [duck]
@@ -56,8 +58,8 @@ export function normalizeSfxVolume(value) {
 	return Math.max(0, Math.min(1, finite));
 }
 
-/** @param {number | undefined} value */
-export function normalizeSfxRate(value) {
+/** Clamp effect playback to the consistently supported Web Audio range. */
+export function normalizeSfxRate(/** @type {number | undefined} */ value) {
 	const finite = value === undefined ? 1 : Number.isFinite(value) ? value : 1;
 	return Math.max(0.5, Math.min(4, finite));
 }

@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-	glidingMusicRate,
 	MUSIC_RATES,
 	musicVolume,
 	normalizeMusicRate,
 	normalizeSfxRate,
-	normalizeSfxVolume
+	normalizeSfxVolume,
+	scheduleMusicRate
 } from './mix.js';
 
 test('normalizes the three authored music rates without non-finite values', () => {
@@ -17,17 +17,36 @@ test('normalizes the three authored music rates without non-finite values', () =
 	assert.equal(normalizeMusicRate(Number.POSITIVE_INFINITY), 1);
 });
 
-test('keeps the HTML audio fallback inside Howler documented rates', () => {
-	assert.equal(normalizeMusicRate(1 / 3, false), 0.5);
-	assert.equal(normalizeMusicRate(5, false), 4);
-});
+test('schedules fast and normal rates on the same live source without stale automation', () => {
+	/** @type {Array<Array<number | string>>} */
+	const calls = [];
+	const param = {
+		value: 1,
+		cancelScheduledValues: (/** @type {number} */ time) => calls.push(['cancel', time]),
+		setValueAtTime(/** @type {number} */ value, /** @type {number} */ time) {
+			this.value = value;
+			calls.push(['value', value, time]);
+		},
+		setTargetAtTime(
+			/** @type {number} */ value,
+			/** @type {number} */ time,
+			/** @type {number} */ constant
+		) {
+			calls.push(['target', value, time, constant]);
+		}
+	};
 
-test('glides music rate like a record settling back to speed', () => {
-	assert.equal(glidingMusicRate(5, 1, 0), 5);
-	assert.equal(glidingMusicRate(5, 1, 1), 1);
-	const halfway = glidingMusicRate(5, 1, 0.5);
-	assert.ok(halfway > 1 && halfway < 3);
-	assert.equal(glidingMusicRate(Number.NaN, 1, 0), 1);
+	scheduleMusicRate(param, 5, 10, 1);
+	scheduleMusicRate(param, 1, 11, 1);
+	assert.deepEqual(calls.at(-2), ['target', 1, 11, 0.2]);
+	assert.deepEqual(calls.at(-1), ['value', 1, 12]);
+	assert.equal(param.value, 1);
+
+	scheduleMusicRate(param, 1 / 3, 12, 1);
+	scheduleMusicRate(param, 1, 13, 1);
+	assert.deepEqual(calls.at(-2), ['target', 1, 13, 0.2]);
+	assert.deepEqual(calls.at(-1), ['value', 1, 14]);
+	assert.equal(param.value, 1);
 });
 
 test('reconstructs the remastered default music mix and applies ducking', () => {
@@ -38,7 +57,7 @@ test('reconstructs the remastered default music mix and applies ducking', () => 
 	assert.equal(musicVolume('asteroid', 1, 0.22), 0.22);
 });
 
-test('sanitizes per-play sound options to Howler public ranges', () => {
+test('sanitizes per-play sound options to native gain and rate ranges', () => {
 	assert.equal(normalizeSfxVolume(undefined), 1);
 	assert.equal(normalizeSfxVolume(3), 1);
 	assert.equal(normalizeSfxVolume(-2), 0);

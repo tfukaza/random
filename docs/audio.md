@@ -17,14 +17,13 @@ Generated with ElevenLabs on 2026-07-18 for this project.
 - ElevenLabs Music v2, seed `12854`, 45 seconds, 192 kbps MP3. A warm, quiet,
   loopable chamber-certificate theme used only for the final report.
 
-The music files were remastered once after generation so Howler never needs a runtime
-volume above `1`. The default loop has its maximum patient-mode gain (`1.12 × 1.5`)
-and -3 dB safety ceiling baked in; Howler plays that file at `0.667` normally, `1.0`
-at one-third speed, and `0.48` at 5× speed. The asteroid and report tracks have their
-previous `1.28` and `0.768` gains baked in and always play at their authored rate.
-Changes between patience playback rates use a one-second exponential pitch glide, matching
-the record-like wind-down of the original Web Audio implementation instead of stepping
-instantly between rates.
+The music files were remastered once after generation so runtime gain never exceeds `1`.
+The default loop has its maximum patient-mode gain (`1.12 × 1.5`) and -3 dB safety ceiling
+baked in; the native gain graph plays that file at `0.667` normally, `1.0` at one-third
+speed, and `0.48` at 5× speed. The asteroid and report tracks have their previous `1.28`
+and `0.768` gains baked in and always play at their authored rate. Changes between patience
+playback rates use one AudioParam with a one-second exponential pitch glide and an exact
+endpoint, so reversing from fast or slow back to normal cannot leave stale automation.
 
 ## Sound effects
 
@@ -43,14 +42,16 @@ baked into the MP3s: UI tap `0.3`, toggle `0.47`, confirm `3.4`, slider `0.49`, 
 `1.12`, balance `0.88`, elevator button/approach/open/shut `0.84`/`0.651`/`0.133`/
 `0.385`, asteroid warning/approach/impact `0.81`/`0.44`/`0.71`, and result reveal
 `1.9`. The warning's baked `0.81` includes its authored 3× final-countdown emphasis.
-Per-play runtime volume is now only an attenuation in Howler's `0–1` range.
+Per-play runtime volume is only an attenuation in the native gain node's `0–1` range.
 
 The fast RSVP reader uses a procedural 18 ms sine-wave "dit" per displayed word. It is
-generated on Howler's unlocked Web Audio clock instead of loaded from a file so it remains
+generated on the shared Web Audio clock instead of loaded from a file so it remains
 tightly synchronized at 1,500 WPM and does not overlap its own tail. Its 0.036 peak gain
 keeps it audible over the deliberately accelerated background score.
 
-Runtime playback uses Howler.js 2.2.4. Howler owns mobile audio unlocking, Web Audio/HTML5
-fallback, decoded-buffer caching, sound pools, and automatic context suspension. The quiz
-still begins playback from the explicit Begin gesture required by browser autoplay policy;
-later pointer or keyboard gestures resume an audio context interrupted by iOS.
+Runtime playback uses one native Web Audio graph for music, effects, ducking, and the reader
+tick. Supporting Safari versions are feature-detected through the Audio Session API and set
+to the `playback` category, which makes intentional quiz audio follow media volume even when
+the ring switch is silent. The AudioContext is not created until the explicit Begin gesture;
+later pointer or keyboard gestures resume it after an iOS interruption, while page visibility
+changes suspend and resume the same graph instead of constructing a second playback path.

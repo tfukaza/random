@@ -5,6 +5,23 @@
  */
 export const releases = [
 	{
+		version: '0.2.3',
+		date: 'July 18, 2026',
+		dateIso: '2026-07-18',
+		label: 'Audio engine repair',
+		summary: 'Music changes pace reliably and iPhone audio recovers more cleanly.',
+		sections: [
+			{
+				title: 'Fixed',
+				items: [
+					'The background score now speeds up as soon as the fast patience test begins.',
+					'Choosing the escape hatch reliably returns fast or slow music to normal speed.',
+					'iPhone and iPad audio now uses the browser’s playback session and recovers after interruptions without competing playback paths.'
+				]
+			}
+		]
+	},
+	{
 		version: '0.2.2',
 		date: 'July 18, 2026',
 		dateIso: '2026-07-18',

@@ -1,16 +1,11 @@
-import { Howl, Howler } from 'howler';
 import {
-	glidingMusicRate,
 	musicVolume,
 	normalizeMusicRate,
 	normalizeSfxRate,
-	normalizeSfxVolume
+	normalizeSfxVolume,
+	scheduleMusicRate
 } from './mix.js';
-import {
-	needsIosHtml5Audio,
-	preserveHowlsDuringMobileUnlock,
-	primeIosHtml5Music
-} from './howler-compat.js';
+import { configureAudioSession } from './audio-session.js';
 
 const MUSIC = {
 	default: { path: '/audio/music/puzzle-chamber-loop.mp3', loop: true, rateSensitive: true },
@@ -42,8 +37,8 @@ const SFX = {
 
 const STORAGE_KEY = 'personality-quiz-sound';
 const CORE = ['ui-tap', 'ui-toggle', 'ui-confirm', 'slider-detent', 'drag-pickup', 'drop-valid'];
-const MUSIC_FADE_MS = 140;
-const MUSIC_RATE_GLIDE_MS = 1000;
+const MUSIC_FADE_SECONDS = 0.14;
+const MUSIC_RATE_GLIDE_SECONDS = 1;
 
 export const audioState = $state({
 	enabled: true,
@@ -52,153 +47,150 @@ export const audioState = $state({
 	rate: 1,
 	/** The source that is audibly running; empty while loading/switching. */
 	musicTrack: '',
-	/** A permanent load/decode failure, not an autoplay block. */
+	/** A permanent network/decode failure, not an autoplay block. */
 	musicFailed: false
 });
 
-/** @type {Map<keyof typeof MUSIC, Howl>} */
-const musicHowls = new Map();
-/** @type {Map<keyof typeof SFX, Howl>} */
-const sfxHowls = new Map();
-/** @type {WeakMap<Howl, Promise<boolean>>} */
-const loadPromises = new WeakMap();
+/** @type {AudioContext | null} */
+let context = null;
+/** @type {GainNode | null} */
+let masterGain = null;
+/** @type {GainNode | null} */
+let musicBus = null;
+/** @type {GainNode | null} */
+let sfxBus = null;
+/** @type {DynamicsCompressorNode | null} */
+let musicLimiter = null;
+/** @type {Map<string, AudioBuffer>} */
+const buffers = new Map();
+/** @type {Map<string, Promise<AudioBuffer | null>>} */
+const pendingLoads = new Map();
 const duckRequests = new Map();
-/** @type {Map<string, { token: object, howl: Howl, id: number }>} */
+/** @type {Map<string, { token: object, source: AudioBufferSourceNode | null }>} */
 const taggedSounds = new Map();
-/** Sound IDs stopped before a delayed mobile-unlock retry could run. */
-const canceledSoundIds = new Set();
 
-let initialized = false;
 let hydrated = false;
 let preloadScheduled = false;
-let iosHtml5Audio = false;
+let sessionListening = false;
 /** @type {keyof typeof MUSIC} */
 let desiredMusicTrack = 'default';
-/** @type {{ track: keyof typeof MUSIC, howl: Howl, id: number } | null} */
-let activeMusic = null;
 /** @type {keyof typeof MUSIC | ''} */
 let completedMusicTrack = '';
+/** @type {{ track: keyof typeof MUSIC, source: AudioBufferSourceNode, gain: GainNode } | null} */
+let activeMusic = null;
 let musicSwitchToken = 0;
-let musicRateFrame = 0;
-let htmlMusicPaused = false;
-/** @type {Set<string>} */
-const htmlTagsPaused = new Set();
 
 /** @param {...unknown} args */
 function warn(...args) {
 	if (import.meta.env.DEV) console.warn(...args);
 }
 
-function ensureInitialized() {
-	if (initialized || typeof window === 'undefined') return initialized;
-	initialized = true;
-	preserveHowlsDuringMobileUnlock(Howler);
-	iosHtml5Audio = needsIosHtml5Audio(window.navigator);
-	Howler.autoUnlock = true;
-	Howler.autoSuspend = true;
-
-	for (const [track, config] of Object.entries(MUSIC)) {
-		/** @type {Howl} */
-		let howl;
-		howl = new Howl({
-			src: [config.path],
-			format: ['mp3'],
-			html5: iosHtml5Audio,
-			loop: config.loop,
-			preload: false,
-			pool: 1,
-			onplay: (id) => {
-				if (activeMusic?.howl !== howl || activeMusic.id !== id || desiredMusicTrack !== track)
-					return;
-				audioState.musicTrack = track;
-				audioState.musicFailed = false;
-				audioState.ready = true;
-			},
-			onend: (id) => {
-				if (activeMusic?.howl !== howl || activeMusic.id !== id) return;
-				activeMusic = null;
-				completedMusicTrack = /** @type {keyof typeof MUSIC} */ (track);
-				if (audioState.musicTrack === track) audioState.musicTrack = '';
-			},
-			onloaderror: (_id, error) => {
-				warn(`Audio load failed: ${config.path}`, error);
-				if (desiredMusicTrack !== track) return;
-				audioState.musicFailed = true;
-				audioState.ready = false;
-				audioState.musicTrack = '';
-			},
-			onplayerror: (id, error) => {
-				warn(`Audio playback is waiting for browser unlock: ${config.path}`, error);
-				howl.once('unlock', () => {
-					if (
-						audioState.enabled &&
-						audioState.started &&
-						desiredMusicTrack === track &&
-						activeMusic?.howl === howl &&
-						activeMusic.id === id
-					)
-						howl.play(id);
-				});
-			}
-		});
-		musicHowls.set(/** @type {keyof typeof MUSIC} */ (track), howl);
-	}
-
-	for (const [name, path] of Object.entries(SFX)) {
-		/** @type {Howl} */
-		let howl;
-		howl = new Howl({
-			src: [path],
-			format: ['mp3'],
-			html5: iosHtml5Audio,
-			preload: false,
-			pool: 8,
-			onloaderror: (_id, error) => warn(`Audio load failed: ${path}`, error),
-			onplayerror: (id, error) => {
-				warn(`Audio playback is waiting for browser unlock: ${path}`, error);
-				howl.once('unlock', () => {
-					if (!canceledSoundIds.delete(id) && audioState.enabled && audioState.started)
-						howl.play(id);
-				});
-			}
-		});
-		sfxHowls.set(/** @type {keyof typeof SFX} */ (name), howl);
-	}
-
-	void loadHowl(musicHowls.get(desiredMusicTrack));
-	for (const id of CORE) void loadHowl(sfxHowls.get(/** @type {keyof typeof SFX} */ (id)));
-	return true;
+/** Safari uses this state in addition to the standard AudioContextState values. */
+function contextIsRunning() {
+	return context?.state === 'running';
 }
 
-/** @param {Howl | undefined} howl */
-function loadHowl(howl) {
-	if (!howl) return Promise.resolve(false);
-	if (howl.state() === 'loaded') return Promise.resolve(true);
-	const existing = loadPromises.get(howl);
-	if (existing) return existing;
-	const promise = new Promise((resolve) => {
-		const done = (/** @type {boolean} */ loaded) => {
-			howl.off('load', loadedHandler);
-			howl.off('loaderror', errorHandler);
-			loadPromises.delete(howl);
-			resolve(loaded);
-		};
-		const loadedHandler = () => done(true);
-		const errorHandler = () => done(false);
-		howl.once('load', loadedHandler);
-		howl.once('loaderror', errorHandler);
-		if (howl.state() === 'unloaded') howl.load();
+function resetClosedContext() {
+	if (context?.state !== 'closed') return;
+	context = null;
+	masterGain = null;
+	musicBus = null;
+	sfxBus = null;
+	musicLimiter = null;
+	activeMusic = null;
+	audioState.musicTrack = '';
+	audioState.ready = false;
+}
+
+function configurePlatformAudio() {
+	if (typeof navigator === 'undefined') return;
+	const session = configureAudioSession(/** @type {any} */ (navigator));
+	if (!session || sessionListening || typeof session.addEventListener !== 'function') return;
+	sessionListening = true;
+	session.addEventListener('statechange', () => {
+		if (session.state === 'active') resumeAudio();
 	});
-	loadPromises.set(howl, promise);
-	return promise;
+}
+
+function ensureContext() {
+	if (typeof window === 'undefined') return null;
+	resetClosedContext();
+	if (context) return context;
+
+	configurePlatformAudio();
+	const Context = window.AudioContext || /** @type {any} */ (window).webkitAudioContext;
+	if (!Context) return null;
+	context = new Context();
+	masterGain = context.createGain();
+	musicBus = context.createGain();
+	sfxBus = context.createGain();
+	musicLimiter = context.createDynamicsCompressor();
+
+	musicLimiter.threshold.value = -3;
+	musicLimiter.knee.value = 1;
+	musicLimiter.ratio.value = 20;
+	musicLimiter.attack.value = 0.003;
+	musicLimiter.release.value = 0.12;
+	masterGain.gain.value = audioState.enabled ? 1 : 0;
+	musicBus.gain.value = 1;
+	sfxBus.gain.value = 1;
+	musicBus.connect(musicLimiter);
+	musicLimiter.connect(masterGain);
+	sfxBus.connect(masterGain);
+	masterGain.connect(context.destination);
+	return context;
+}
+
+/** @param {AudioContext} ctx */
+async function resumeContext(ctx) {
+	if (ctx.state === 'running') return true;
+	try {
+		await ctx.resume();
+		return /** @type {string} */ (ctx.state) === 'running';
+	} catch (error) {
+		warn('Audio resume failed', error);
+		return false;
+	}
+}
+
+/** @param {string} id */
+async function loadBuffer(id) {
+	const cached = buffers.get(id);
+	if (cached) return cached;
+	const pending = pendingLoads.get(id);
+	if (pending) return pending;
+	const ctx = ensureContext();
+	if (!ctx) return null;
+	const musicId = id.startsWith('music:') ? id.slice(6) : '';
+	const asset = musicId
+		? MUSIC[/** @type {keyof typeof MUSIC} */ (musicId)]?.path
+		: SFX[/** @type {keyof typeof SFX} */ (id)];
+	if (!asset) return null;
+
+	const request = fetch(asset)
+		.then((response) => {
+			if (!response.ok) throw new Error(`Audio load failed: ${asset}`);
+			return response.arrayBuffer();
+		})
+		.then((data) => ctx.decodeAudioData(data))
+		.then((buffer) => {
+			buffers.set(id, buffer);
+			return buffer;
+		})
+		.catch((error) => {
+			warn(error);
+			return null;
+		})
+		.finally(() => pendingLoads.delete(id));
+	pendingLoads.set(id, request);
+	return request;
 }
 
 function schedulePreload() {
 	if (preloadScheduled || typeof window === 'undefined') return;
 	preloadScheduled = true;
 	const preload = () => {
-		for (const howl of musicHowls.values()) void loadHowl(howl);
-		for (const howl of sfxHowls.values()) void loadHowl(howl);
+		for (const id of Object.keys(SFX)) void loadBuffer(id);
 	};
 	if ('requestIdleCallback' in window) window.requestIdleCallback(preload);
 	else setTimeout(preload, 500);
@@ -208,63 +200,40 @@ function effectiveDuck() {
 	return Math.min(1, ...duckRequests.values());
 }
 
-function selectedMusicVolume() {
-	return musicVolume(desiredMusicTrack, audioState.rate, effectiveDuck());
-}
-
-/** Start iOS media while the current user gesture is still active. */
-function primeSelectedIosMusic() {
-	if (!iosHtml5Audio || completedMusicTrack === desiredMusicTrack) return;
-	const howl = musicHowls.get(desiredMusicTrack);
-	if (!howl || howl.state() === 'loaded') return;
-	const config = MUSIC[desiredMusicTrack];
-	primeIosHtml5Music(howl, {
-		volume: selectedMusicVolume(),
-		rate: config.rateSensitive ? normalizeMusicRate(audioState.rate, false) : 1,
-		loop: config.loop
-	});
-}
-
-function cancelMusicRateGlide() {
-	if (musicRateFrame) cancelAnimationFrame(musicRateFrame);
-	musicRateFrame = 0;
-}
-
-/** @param {number} target */
-function glideActiveMusicRate(target) {
-	if (!activeMusic || !MUSIC[activeMusic.track].rateSensitive) return;
-	const music = activeMusic;
-	const from = Number(music.howl.rate(music.id));
-	if (!Number.isFinite(from) || Math.abs(from - target) < 0.001) {
-		cancelMusicRateGlide();
-		music.howl.rate(target, music.id);
-		return;
-	}
-	cancelMusicRateGlide();
-	const startedAt = performance.now();
-	const step = (/** @type {number} */ now) => {
-		if (activeMusic !== music) {
-			musicRateFrame = 0;
-			return;
-		}
-		const progress = Math.min(1, (now - startedAt) / MUSIC_RATE_GLIDE_MS);
-		music.howl.rate(glidingMusicRate(from, target, progress), music.id);
-		if (progress < 1) musicRateFrame = requestAnimationFrame(step);
-		else musicRateFrame = 0;
-	};
-	musicRateFrame = requestAnimationFrame(step);
+/** @param {keyof typeof MUSIC} track */
+function selectedMusicVolume(track) {
+	return musicVolume(track, audioState.rate, effectiveDuck());
 }
 
 /** @param {number} [duration] */
-function updateMusicVolume(duration = 120) {
-	if (!activeMusic || activeMusic.track !== desiredMusicTrack) return;
-	const target = selectedMusicVolume();
-	const current = Number(activeMusic.howl.volume(activeMusic.id));
-	if (!activeMusic.howl.playing(activeMusic.id) || duration <= 0 || !Number.isFinite(current)) {
-		activeMusic.howl.volume(target, activeMusic.id);
-		return;
+function updateMusicVolume(duration = 0.12) {
+	if (!context || !activeMusic || activeMusic.track !== desiredMusicTrack) return;
+	const param = activeMusic.gain.gain;
+	const now = context.currentTime;
+	const target = selectedMusicVolume(activeMusic.track);
+	param.cancelScheduledValues(now);
+	param.setValueAtTime(param.value, now);
+	if (duration <= 0) param.setValueAtTime(target, now);
+	else param.setTargetAtTime(target, now, Math.max(0.01, duration / 5));
+}
+
+/** @param {AudioBufferSourceNode} source */
+function stopSource(source) {
+	try {
+		source.stop();
+	} catch {
+		// A finite cue may have ended between the state check and this call.
 	}
-	activeMusic.howl.fade(current, target, duration, activeMusic.id);
+}
+
+/** @param {{ source: AudioBufferSourceNode, gain: GainNode }} music */
+function fadeAndStop(music) {
+	if (!context) return stopSource(music.source);
+	const now = context.currentTime;
+	music.gain.gain.cancelScheduledValues(now);
+	music.gain.gain.setValueAtTime(music.gain.gain.value, now);
+	music.gain.gain.linearRampToValueAtTime(0, now + MUSIC_FADE_SECONDS);
+	setTimeout(() => stopSource(music.source), MUSIC_FADE_SECONDS * 1000 + 20);
 }
 
 /**
@@ -272,41 +241,8 @@ function updateMusicVolume(duration = 120) {
  * @param {boolean} restart
  */
 async function switchMusic(track, restart) {
-	if (!ensureInitialized()) return;
 	const token = ++musicSwitchToken;
-	const howl = musicHowls.get(track);
-	if (!howl) return;
-	// Avoid crossing an `await` when the file is already ready. Safari requires
-	// the initial media play to remain on the synchronous stack of the tap that
-	// started the quiz; even awaiting an already-resolved promise loses that
-	// user activation.
-	const loaded = howl.state() === 'loaded' ? true : await loadHowl(howl);
-	if (token !== musicSwitchToken || desiredMusicTrack !== track) return;
-	if (!loaded) {
-		audioState.musicFailed = true;
-		return;
-	}
-	if (!audioState.enabled || !audioState.started) return;
-
-	if (activeMusic?.track === track && !restart) {
-		if (!activeMusic.howl.playing(activeMusic.id)) activeMusic.howl.play(activeMusic.id);
-		updateMusicVolume(0);
-		return;
-	}
-	if (completedMusicTrack === track && !restart) return;
-
-	cancelMusicRateGlide();
-	const previous = activeMusic;
-	activeMusic = null;
-	audioState.musicTrack = '';
-	audioState.ready = false;
-	if (previous) {
-		const from = Number(previous.howl.volume(previous.id));
-		if (previous.howl.playing(previous.id) && Number.isFinite(from))
-			previous.howl.fade(from, 0, MUSIC_FADE_MS, previous.id);
-		await new Promise((resolve) => setTimeout(resolve, MUSIC_FADE_MS));
-		previous.howl.stop(previous.id);
-	}
+	const buffer = await loadBuffer(`music:${track}`);
 	if (
 		token !== musicSwitchToken ||
 		desiredMusicTrack !== track ||
@@ -314,37 +250,90 @@ async function switchMusic(track, restart) {
 		!audioState.started
 	)
 		return;
+	if (!buffer) {
+		audioState.musicFailed = true;
+		audioState.ready = false;
+		return;
+	}
+	const ctx = ensureContext();
+	if (!ctx || !musicBus) return;
 
+	if (activeMusic?.track === track && !restart) {
+		if (MUSIC[track].rateSensitive)
+			scheduleMusicRate(activeMusic.source.playbackRate, audioState.rate, ctx.currentTime, 0);
+		updateMusicVolume(0);
+		return;
+	}
+	if (completedMusicTrack === track && !restart) return;
+
+	const previous = activeMusic;
+	const source = ctx.createBufferSource();
+	const gain = ctx.createGain();
+	source.buffer = buffer;
+	source.loop = MUSIC[track].loop;
+	source.playbackRate.value = MUSIC[track].rateSensitive ? audioState.rate : 1;
+	gain.gain.value = 0;
+	source.connect(gain);
+	gain.connect(musicBus);
+
+	const music = { track, source, gain };
+	activeMusic = music;
 	completedMusicTrack = '';
-	const volume = selectedMusicVolume();
-	const rate = MUSIC[track].rateSensitive
-		? normalizeMusicRate(audioState.rate, Howler.usingWebAudio && !iosHtml5Audio)
-		: 1;
-	howl.volume(volume);
-	howl.rate(rate);
-	const id = howl.play();
-	activeMusic = { track, howl, id };
-	howl.volume(volume, id);
-	howl.rate(rate, id);
+	audioState.musicTrack = track;
+	audioState.musicFailed = false;
+	audioState.ready = true;
+	source.onended = () => {
+		if (activeMusic === music) {
+			activeMusic = null;
+			completedMusicTrack = track;
+			audioState.musicTrack = '';
+			audioState.ready = false;
+		}
+		source.disconnect();
+		gain.disconnect();
+	};
+	source.start();
+
+	const now = ctx.currentTime;
+	gain.gain.setValueAtTime(0, now);
+	gain.gain.linearRampToValueAtTime(selectedMusicVolume(track), now + MUSIC_FADE_SECONDS);
+	if (previous) fadeAndStop(previous);
+}
+
+function ensureSelectedMusic() {
+	if (
+		activeMusic?.track === desiredMusicTrack ||
+		completedMusicTrack === desiredMusicTrack ||
+		!audioState.enabled ||
+		!audioState.started
+	)
+		return;
+	void switchMusic(desiredMusicTrack, false);
 }
 
 export function hydrateAudioPreference() {
-	if (!hydrated && typeof localStorage !== 'undefined') {
-		hydrated = true;
-		const saved = localStorage.getItem(STORAGE_KEY);
-		if (saved === 'off') audioState.enabled = false;
-		else if (saved === 'on') audioState.enabled = true;
-	}
-	ensureInitialized();
+	if (hydrated || typeof localStorage === 'undefined') return;
+	hydrated = true;
+	const saved = localStorage.getItem(STORAGE_KEY);
+	if (saved === 'off') audioState.enabled = false;
+	else if (saved === 'on') audioState.enabled = true;
 }
 
 export function startAudio() {
 	audioState.started = true;
-	if (!ensureInitialized() || !audioState.enabled) return;
-	Howler.mute(false);
-	primeSelectedIosMusic();
-	void switchMusic(desiredMusicTrack, false);
-	resumeAudio();
+	if (!audioState.enabled) return;
+	const ctx = ensureContext();
+	if (!ctx || !masterGain) {
+		audioState.musicFailed = true;
+		return;
+	}
+	const now = ctx.currentTime;
+	masterGain.gain.cancelScheduledValues(now);
+	masterGain.gain.setTargetAtTime(1, now, 0.04);
+	void resumeContext(ctx).then((running) => {
+		if (running) ensureSelectedMusic();
+	});
+	for (const id of CORE) void loadBuffer(id);
 	schedulePreload();
 }
 
@@ -352,20 +341,28 @@ export function startAudio() {
 export function setAudioEnabled(enabled) {
 	audioState.enabled = enabled;
 	if (typeof localStorage !== 'undefined') localStorage.setItem(STORAGE_KEY, enabled ? 'on' : 'off');
-	if (!ensureInitialized()) return;
-	Howler.mute(!enabled);
 	if (enabled && audioState.started) {
 		startAudio();
+		return;
 	}
+	if (!context || !masterGain) return;
+	const now = context.currentTime;
+	masterGain.gain.cancelScheduledValues(now);
+	masterGain.gain.setTargetAtTime(0, now, 0.025);
 }
 
 /** @param {number} rate */
 export function setMusicRate(rate) {
-	const next = normalizeMusicRate(rate, true);
+	const next = normalizeMusicRate(rate);
 	audioState.rate = next;
-	if (!activeMusic || !MUSIC[activeMusic.track].rateSensitive) return;
-	glideActiveMusicRate(normalizeMusicRate(next, Howler.usingWebAudio && !iosHtml5Audio));
-	updateMusicVolume(200);
+	if (!context || !activeMusic || !MUSIC[activeMusic.track].rateSensitive) return;
+	scheduleMusicRate(
+		activeMusic.source.playbackRate,
+		next,
+		context.currentTime,
+		MUSIC_RATE_GLIDE_SECONDS
+	);
+	updateMusicVolume(0.2);
 }
 
 /**
@@ -381,29 +378,27 @@ export async function setMusicTrack(id, { restart = false } = {}) {
 		audioState.musicTrack = '';
 		audioState.ready = false;
 	}
-	if (!ensureInitialized()) return;
-	if (!audioState.enabled || !audioState.started) {
-		const loaded = await loadHowl(musicHowls.get(id));
-		if (!loaded && desiredMusicTrack === id) audioState.musicFailed = true;
+	// Remember deep-linked scenes without creating an AudioContext before the
+	// first gesture. The next pointer/key event starts the selected cue.
+	if (!audioState.enabled || !audioState.started) return;
+	const ctx = ensureContext();
+	if (!ctx) {
+		audioState.musicFailed = true;
 		return;
 	}
+	if (!(await resumeContext(ctx))) return;
 	await switchMusic(id, restart);
 }
 
-/**
- * Stop the selected score without choosing a replacement. Marking it complete
- * prevents gesture and visibility recovery from restarting it; a later
- * `setMusicTrack` call explicitly begins the next scene's music.
- */
+/** Stop the selected score without allowing visibility recovery to restart it. */
 export function stopMusic() {
 	musicSwitchToken += 1;
-	cancelMusicRateGlide();
 	completedMusicTrack = desiredMusicTrack;
 	const previous = activeMusic;
 	activeMusic = null;
 	audioState.musicTrack = '';
 	audioState.ready = false;
-	if (previous) previous.howl.stop(previous.id);
+	if (previous) stopSource(previous.source);
 }
 
 /** @param {string} key @param {number} amount */
@@ -421,45 +416,53 @@ export function clearMusicDuck(key) {
 /**
  * @param {keyof typeof SFX} id
  * @param {{ volume?: number, rate?: number, tag?: string }} [options]
- * @returns {Promise<number | null>}
+ * @returns {Promise<AudioBufferSourceNode | null>}
  */
 export async function playSfx(id, options = {}) {
-	if (!audioState.enabled || !audioState.started || !ensureInitialized()) return null;
-	const howl = sfxHowls.get(id);
-	if (!howl) return null;
+	if (!audioState.enabled || !audioState.started) return null;
+	const ctx = ensureContext();
+	if (!ctx || !sfxBus) return null;
 	const token = {};
-	if (options.tag) stopSfx(options.tag);
-	const soundId = howl.play();
-	howl.volume(normalizeSfxVolume(options.volume), soundId);
-	howl.rate(normalizeSfxRate(options.rate), soundId);
 	if (options.tag) {
-		const tag = options.tag;
-		taggedSounds.set(tag, { token, howl, id: soundId });
-		const clear = () => {
-			if (taggedSounds.get(tag)?.token === token) taggedSounds.delete(tag);
-		};
-		howl.once('end', clear, soundId);
-		howl.once('stop', clear, soundId);
+		stopSfx(options.tag);
+		taggedSounds.set(options.tag, { token, source: null });
 	}
-	return soundId;
+	if (!(await resumeContext(ctx))) {
+		if (options.tag && taggedSounds.get(options.tag)?.token === token)
+			taggedSounds.delete(options.tag);
+		return null;
+	}
+	const buffer = await loadBuffer(id);
+	if (!buffer || !audioState.enabled || !contextIsRunning()) {
+		if (options.tag && taggedSounds.get(options.tag)?.token === token)
+			taggedSounds.delete(options.tag);
+		return null;
+	}
+	if (options.tag && taggedSounds.get(options.tag)?.token !== token) return null;
+
+	const source = ctx.createBufferSource();
+	const gain = ctx.createGain();
+	source.buffer = buffer;
+	source.playbackRate.value = normalizeSfxRate(options.rate);
+	gain.gain.value = normalizeSfxVolume(options.volume);
+	source.connect(gain);
+	gain.connect(sfxBus);
+	if (options.tag) taggedSounds.set(options.tag, { token, source });
+	source.onended = () => {
+		if (options.tag && taggedSounds.get(options.tag)?.source === source)
+			taggedSounds.delete(options.tag);
+		source.disconnect();
+		gain.disconnect();
+	};
+	source.start();
+	return source;
 }
 
-/**
- * The 18 ms RSVP tick remains procedural for precise 1,500 WPM timing, but it
- * now uses the context that Howler has already unlocked and owns.
- */
+/** A tiny procedural timing cue for the 1,500 WPM reader. */
 export function playReaderTick() {
-	if (
-		!audioState.enabled ||
-		!audioState.started ||
-		!ensureInitialized() ||
-		!Howler.usingWebAudio ||
-		!Howler.ctx ||
-		!Howler.masterGain
-	)
-		return;
-	const ctx = Howler.ctx;
-	if (ctx.state !== 'running') return;
+	if (!audioState.enabled || !audioState.started) return;
+	const ctx = ensureContext();
+	if (!ctx || !sfxBus || !contextIsRunning()) return;
 	const now = ctx.currentTime;
 	const oscillator = ctx.createOscillator();
 	const gain = ctx.createGain();
@@ -469,7 +472,7 @@ export function playReaderTick() {
 	gain.gain.exponentialRampToValueAtTime(0.036, now + 0.002);
 	gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.018);
 	oscillator.connect(gain);
-	gain.connect(Howler.masterGain);
+	gain.connect(sfxBus);
 	oscillator.start(now);
 	oscillator.stop(now + 0.02);
 	oscillator.onended = () => {
@@ -482,54 +485,25 @@ export function playReaderTick() {
 export function stopSfx(tag) {
 	const active = taggedSounds.get(tag);
 	taggedSounds.delete(tag);
-	if (active) {
-		if (!active.howl.playing(active.id)) canceledSoundIds.add(active.id);
-		active.howl.stop(active.id);
-	}
+	if (active?.source) stopSource(active.source);
 }
 
 export function suspendAudio() {
-	if (!initialized) return;
-	if (!iosHtml5Audio && Howler.usingWebAudio && Howler.ctx) {
-		if (Howler.ctx.state === 'running') void Howler.ctx.suspend();
-		return;
-	}
-	if (activeMusic?.howl.playing(activeMusic.id)) {
-		activeMusic.howl.pause(activeMusic.id);
-		htmlMusicPaused = true;
-	}
-	for (const [tag, active] of taggedSounds) {
-		if (!active.howl.playing(active.id)) continue;
-		active.howl.pause(active.id);
-		htmlTagsPaused.add(tag);
-	}
+	if (context?.state === 'running')
+		void context.suspend().catch((error) => warn('Audio suspend failed', error));
 }
 
 export function resumeAudio() {
-	if (!audioState.enabled || !audioState.started || !ensureInitialized()) return;
-	Howler.mute(false);
-	if (!iosHtml5Audio && Howler.usingWebAudio && Howler.ctx) {
-		if (Howler.ctx.state === 'running') {
-			if (!activeMusic && completedMusicTrack !== desiredMusicTrack)
-				void switchMusic(desiredMusicTrack, false);
-			return;
-		}
-		void Howler.ctx
-			.resume()
-			.then(() => {
-				if (!activeMusic && completedMusicTrack !== desiredMusicTrack)
-					void switchMusic(desiredMusicTrack, false);
-			})
-			.catch((error) => warn('Audio resume failed', error));
+	if (!audioState.enabled || !audioState.started) return;
+	const ctx = ensureContext();
+	if (!ctx || !masterGain) {
+		audioState.musicFailed = true;
 		return;
 	}
-	if (htmlMusicPaused && activeMusic) activeMusic.howl.play(activeMusic.id);
-	htmlMusicPaused = false;
-	for (const tag of htmlTagsPaused) {
-		const active = taggedSounds.get(tag);
-		if (active) active.howl.play(active.id);
-	}
-	htmlTagsPaused.clear();
-	if (!activeMusic && completedMusicTrack !== desiredMusicTrack)
-		void switchMusic(desiredMusicTrack, false);
+	const now = ctx.currentTime;
+	masterGain.gain.cancelScheduledValues(now);
+	masterGain.gain.setTargetAtTime(1, now, 0.04);
+	void resumeContext(ctx).then((running) => {
+		if (running) ensureSelectedMusic();
+	});
 }
