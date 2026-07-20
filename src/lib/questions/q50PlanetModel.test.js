@@ -3,8 +3,11 @@ import assert from 'node:assert/strict';
 import {
 	DAMAGE_RADIUS_RADIANS,
 	TARGETS,
+	asteroidMusicDelayMs,
+	asteroidMusicOffset,
 	damageAt,
 	displayPercentages,
+	impactWindow,
 	scoreImpact
 } from './q50PlanetModel.js';
 
@@ -12,6 +15,25 @@ import {
 const dot = (a, b) => a.reduce((sum, value, index) => sum + value * b[index], 0);
 /** @param {number[]} a @param {number[]} b */
 const angle = (a, b) => Math.acos(Math.max(-1, Math.min(1, dot(a, b))));
+
+test('the finite asteroid score stays aligned across every authored deadline', () => {
+	assert.deepEqual(impactWindow(null), { ms: 30_000, phrase: 'thirty seconds' });
+	assert.deepEqual(impactWindow(1), { ms: 5_000, phrase: 'five seconds' });
+	assert.equal(asteroidMusicOffset(1), 25);
+	assert.equal(asteroidMusicOffset(1, 4), 29);
+	assert.equal(asteroidMusicOffset(2), 20);
+	assert.equal(asteroidMusicOffset(3), 10);
+	assert.equal(asteroidMusicOffset(4), 0);
+
+	assert.equal(asteroidMusicDelayMs(7), 4.5 * 60_000);
+	assert.equal(asteroidMusicOffset(7), null);
+	assert.equal(asteroidMusicOffset(7, 4 * 60), null);
+	assert.equal(asteroidMusicOffset(7, 4.5 * 60), 0);
+	assert.equal(asteroidMusicOffset(7, 4 * 60 + 50), 20);
+	assert.equal(asteroidMusicDelayMs(1, 5), 0);
+	assert.equal(asteroidMusicOffset(1, 0, 5), 5);
+	assert.equal(asteroidMusicOffset(1, 4, 5), 25);
+});
 
 test('defines seventeen evenly spread targets with a 12/5 surface split', () => {
 	assert.equal(TARGETS.length, 17);

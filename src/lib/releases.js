@@ -5,6 +5,48 @@
  */
 export const releases = [
 	{
+		version: '0.4.0',
+		date: 'July 19, 2026',
+		dateIso: '2026-07-19',
+		label: 'Answers, considered',
+		summary: 'Choices are editable before submission, and impatient readers get the full quiz at speed.',
+		sections: [
+			{
+				title: 'Added',
+				items: [
+					'Every manual question now separates choosing from submitting, so an accidental first tap is never final.',
+					'Multiple-choice, agree/disagree, sliders, ranks, budgets, and custom controls now share consistent answer behaviour.',
+					'Choosing maximum impatience now speed-reads every remaining question and the report, numbers its visible choices to match the reader, and leaves interludes as normal breathing room.'
+				]
+			},
+			{
+				title: 'Fixed',
+				items: [
+					'Dinner-budget changes no longer fail when their answer metrics are captured.',
+					'Timed scenes wait for the fast reader before their clocks and sound cues begin.'
+				]
+			}
+		]
+	},
+	{
+		version: '0.3.0',
+		date: 'July 19, 2026',
+		dateIso: '2026-07-19',
+		label: 'Sound you can count on',
+		summary: 'Music starts, changes, and recovers predictably across the whole quiz.',
+		sections: [
+			{
+				title: 'Improved',
+				items: [
+					'Music now switches one track at a time, so a late-loading cue cannot overlap or revive a score that was already stopped.',
+					'Fast and slow patience modes return cleanly to normal speed, including after interruptions and escape-hatch exits.',
+					'iPhone and iPad interruptions pause timed scenes with their sound, and a clear restore control appears when Safari needs another tap.',
+					'The asteroid countdown, silent breathing card, results theme, and take-again transition now stay in sync even when sound is toggled mid-scene.'
+				]
+			}
+		]
+	},
+	{
 		version: '0.2.3',
 		date: 'July 18, 2026',
 		dateIso: '2026-07-18',

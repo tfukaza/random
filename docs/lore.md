@@ -14,43 +14,53 @@ Rules of thumb:
   context-free preference questions. They have been considered for arc framing and
   explicitly kept plain. Don't convert them.
 - **Questions are referenced by id, placed by `flowOrder`.** Every question has a
-  permanent id (`'q11'` = its filename number = its ledger key) in the registry in
+  permanent id (`'embezzler-flight'` = its metrics key) in the registry in
   `src/lib/questions/index.js`; play order is the `flowOrder` manifest in the same
-  file, and the displayed № is just the position there. Cross-references (ledger,
+  file, and the displayed № is just the position there. Cross-references (metrics,
   `interludes.js`) always use ids, so reordering is editing `flowOrder` and nothing
   else.
 - **Scene arcs should be adjacent** in `flowOrder`. Consecutive questions let a
-  premise carry without re-explaining it (zombie: q26 → q27). The exception is a
+  premise carry without re-explaining it (moving out: pack-box → airport-discard). The exception is a
   recurring-obstacle arc like the delivery driver, whose beats each re-establish
-  in one line (q13, q54) — those may spread out so the courier keeps resurfacing
+  in one line (angry-customer) — those may spread out so the courier keeps resurfacing
   deeper into the absurdity curve.
 - **Establish, then assume.** The first question of an arc sets the scene in a short
-  muted lead-in paragraph (see `Q26Backpack.svelte` `.premise`); later ones assume it
+  muted lead-in paragraph (see `Q26MoveBox.svelte` `.premise`); later ones assume it
   and get straight to the situation.
-- **Arcs may share state.** Q26 → Q27 is the working example: the backpack contents
-  chosen in Q26 become the answer options in Q27, via `backpackState.svelte.js`.
+- **Arcs may share state.** pack-box → airport-discard is the working example: the
+  items packed into the box become the answer options at the airport, via
+  `boxState.svelte.js`.
   Shared state lives in a `*.svelte.js` module with `$state`, written by the earlier
   question and read by the later one; always handle the empty/deep-linked case.
 
 ---
 
-## Arc 1 — The zombie apocalypse
+## Arc 1 — Moving out
 
-A survivor roaming a depopulated world, scavenging and looking for other people.
+Something has gone wrong enough that you have to be out of your flat tonight, and
+you are leaving the country. What survives the move is the whole arc.
 
-**Deliberately light.** Don't over-elaborate this one — no elaborate mythology of how
-the outbreak happened, no factions, no named characters. It's a backdrop for
-resource-scarcity and who-do-you-help decisions, not a story to be told.
+**Deliberately light on plot.** Don't specify what went wrong — no breakup, no
+eviction notice, no named characters. The vagueness is what makes it land: every
+taker fills it in with their own bad month, and a specific misfortune would just be
+someone else's story. It is a frame for what-do-you-keep decisions, not a narrative.
+
+This arc replaced a zombie apocalypse, which was cut for being hard to relate to.
+The mechanics survived intact; only the fiction changed. Worth remembering when
+inventing the next one: the packing puzzle worked, the wasteland didn't.
 
 Current questions:
 
-- **Q26 Backpack** — establishes the premise; pack a 3×4 inventory grid from a supply
-  shelf, more supply than space.
-- **Q27 Survivor** — you find a wounded survivor you can't carry; give him one item
-  from what you packed.
+- **pack-box** (`Q26MoveBox`) — establishes the premise; pack a 3×4 grid from a pile
+  of your own belongings, more stuff than box. Sentimental items are the expensive
+  ones (the album eats two slots, the guitar three), so keeping what matters costs
+  you what's useful.
+- **airport-discard** (`Q27Airport`) — the bag is over the limit by a hair; throw
+  away exactly one of the things you just chose to keep. Over by a *hair* is
+  deliberate: no item is obviously the heaviest, so the choice is purely about value.
 
-Room to grow: shelter choices, rationing, whether to travel with others, what you'd
-do about a bite.
+Room to grow: what you tell the friend driving you, what you do with the keys,
+whether you leave a note for whoever moves in.
 
 ## Arc 2 — The embezzler on the run
 
@@ -69,21 +79,31 @@ old life; how you pick where to sleep; what you'd give up to be safe again.
 Existing standalone questions that could be pulled into this arc (they already share
 its texture — wealth, hiding, paranoia):
 
-- **Q5 Income** and **Q6 Dinner** — the wealth ladder.
+- ~~**Q5 Income** and **Q6 Dinner**~~ — the wealth ladder. Both cut; see
+  `design.md` § Removed questions. If this arc ever wants a wealth ladder it needs a
+  new one, and it has to solve the problem that killed these: everybody picks the top
+  rung.
 - **Q23 Permission** — a browser asking for your location hits differently when someone
   is hunting you.
-- **Q24 Residence** — submarine / never-landing blimp / space station reads as
-  "where do you disappear to?"
+- ~~**Q24 Residence**~~ — submarine / never-landing blimp / space station read as
+  "where do you disappear to?", but the question was cut; see `design.md` §
+  Removed questions.
 
 ## Arc 3 — The delivery driver
 
 A courier with one order to deliver and an unreasonable, unshakeable commitment to
 delivering it. Increasingly absurd obstacles pile up. Quitting is never on the table.
 
-**They are on a bike**, established in Q13 — the order rides in a bag on their back, not
-in a passenger seat. Keep it that way: the bike is what makes stopping cheap, so every
-refusal to stop is a real choice rather than a logistical one. It also rules out
-car-shaped obstacles (no breakdowns, no parking, no traffic jams you can hide behind).
+**They are on a bike** — the order rides in a bag on their back, not in a passenger
+seat. Nothing establishes this on screen right now (the question that did was cut), so
+the next arc question added should. Keep it that way regardless: the bike is what makes
+stopping cheap, so every refusal to stop is a real choice rather than a logistical one.
+It also rules out car-shaped obstacles (no breakdowns, no parking, no traffic jams you
+can hide behind).
+
+**Currently only one beat is live**: `angry-customer`, which re-establishes the scene in
+its own premise. Its opening line — that you were late because you stopped to hold a
+door open — used to be a callback to the taker's own answer; it now reads as backstory.
 
 Tonally the comic relief of the arcs: the humor comes from the courier treating
 genuinely serious events (a flood, a car chase, the end of the world) as logistics
@@ -184,52 +204,12 @@ your notes is a hop away from a personality quiz.
 1. Decide where the arc sits in `flowOrder` (`src/lib/questions/index.js`) and keep
    its questions adjacent (unless it's a recurring-obstacle arc — see rules of thumb).
 2. Write the first question with a `.premise` lead-in; later ones assume it.
-3. If a later question depends on an earlier answer, add a small `$state` module in
-   `src/lib/questions/` and handle the empty case (see `Q27Survivor.svelte`).
+3. If a later question depends on an earlier submitted answer, read it through
+   `latestResponse()` and handle the empty case. Use a dedicated `$state` module
+   only when live visual state must carry forward (see `Q27Airport.svelte`).
 4. Add the arc to this file so other contributors extend it instead of duplicating it.
 
 ---
-
-## Absurd reprises
-
-A running gag: an early, perfectly normal question comes back much later with its
-**prompt verbatim and its options subtly scrambled** — each answer is built from the
-original's own phrase fragments in the wrong combinations. The taker half-recognizes
-the question but can't place what's off, which is a much better joke than an obviously
-silly option would be.
-
-A one-position rotation of the fragments is the usual way to generate them (Q41 is a
-clean example), but it's a starting point, not a constraint — Q42 crosses parts between
-non-adjacent options and introduces one new noun. **The only real rule is that it has
-to sound almost right.** Ship whichever permutation is funniest to read aloud.
-
-Built so far, both as breathers between heavier interactive formats:
-
-- **Q41PartyAgain** reprises **Q1Party** — the locations slide down a slot, so you can
-  be "the center of the kitchen", chat "one-on-one in the corner", or pet "the host's
-  dogs at home".
-- **Q42DecisionAgain** reprises **Q2Decision** — verbs and objects recombine across
-  each other, so you can "go with your pros-and-cons list", "make a list of everyone
-  you know", or "delay your gut".
-- **Q43RoughDayAgain** reprises **Q4RoughDay** — same object rotation. This one also
-  *escalates*: the diary option is now an AI clone of your own voice reciting it back
-  to you. Later reprises should keep doing that rather than only scrambling.
-
-A caveat learned on Q43: **the rotation is a tool, not a rule.** Its last slot came out
-mechanically as "call a close friend hard", which reads as broken English rather than
-as a joke, so it was rewritten to "have an intense conversation with a close friend" —
-unsettling in the right way while still being the same beat. If a slot lands as
-nonsense instead of comedy, rewrite that slot and note it in the file header.
-
-Conventions:
-
-- **Keep the prompt identical to the original.** The prompt is the anchor that makes
-  the option drift register as wrong.
-- **Copy the original's scores by position**, so structurally it is the same question.
-- **Say so in the file header**, with a before/after table. These read as typos to
-  anyone who doesn't know the bit — every reprise file carries a DO NOT "fix" note, and
-  new ones should too.
-- Place them well away from the original so the callback is faint rather than obvious.
 
 ## Answer-driven presentation
 
@@ -239,29 +219,28 @@ than what it asks. Two working examples:
 - **Q16–Q19 → Q20.** Font, palette, button style and wallpaper choices are applied to
   Q20, so good taste renders a handsome question and silly taste renders a hideous one.
   State lives in `src/lib/design/choices.svelte.js`.
-- **Q29 → every question until the next interlude.** `Q29Patience.svelte` asks "How
+- **Q29 → the rest of the quiz.** `Q29Patience.svelte` asks "How
   patient are you?" (1–7) and writes the rating to `patienceState.svelte.js`. That
-  rating then governs how *every following question is delivered*, until an interlude
-  clears it. Two pieces:
+  rating then governs how following content is delivered. Two pieces:
 
-  - **`PatienceLens.svelte`** (in `src/lib/`) wraps each question in the band. It
-    cannot know what question it's wrapping — there's no shared text or option schema
-    — so it works purely on the rendered box, which makes it apply to any question
-    ever added. Impatient (1–2): the question is legible for 1.8s, then blurs out and
-    stays blurred, still clickable. Patient (6–7): a downward mask wipe uncovers it
-    over 14s, with `pointer-events: none` until it finishes, so it genuinely can't be
-    answered early. Both offer the escape hatch, and taking it ends the bit for the
-    whole band (`patience.bailed`).
-  - **The band** is computed in `+page.svelte` from the flow — q29's index + 1 up to
+  - **`PatienceLens.svelte`** (in `src/lib/`) wraps each question in the chapter. It
+    reads authored prose and choice labels from the rendered box. Impatient (1):
+    all remaining questions and the report are delivered through the fast reader
+    while original visuals and controls remain; option labels become the reader's
+    matching numbers, and controls unlock when each reading finishes. Interludes
+    remain normal breathing room. Patient (7): the original chapter's animations run at
+    1/20 speed with interaction held until arrival. The escape hatch belongs only
+    to that original chapter and ends either treatment (`patience.bailed`).
+  - **The chapter** is computed in `+page.svelte` from the flow — patience-claim's index + 1 up to
     the next interlude — not from hardcoded positions, so it survives reshuffles of
     `flowOrder`. `patienceMode()` in the state module is the single source of truth
     for the delivery mode.
 
-  **The band is bounded** by the "Thank you for your patience." interlude
-  (`interludes.js`, pinned `after: 'q24'`), placed between displayed questions 29
-  and 30, a handful of questions past q29
+  **The chapter is bounded** by the "Thank you for your patience." interlude
+  (`interludes.js`, pinned `after: 'coffee-prompt'` — re-pinned when ideal-residence
+  was cut), placed at the end of chapter 3, a handful of questions past patience-claim
   in `flowOrder` — the message doubles as the punchline for anyone who just sat
-  through the wipe. If q29 moves, keep that interlude's pin a few questions
+  through the wipe. If patience-claim moves, keep that interlude's pin a few questions
   downstream of it, or the lens runs to the end of the quiz.
 
 The general pattern: a `$state` module written by the earlier question, read by the
@@ -272,19 +251,8 @@ later one, always with a sane fallback for the unset case.
 A weaker but stricter coupling: some questions depend on the taker having just *seen*
 the previous one, without reading any state from it.
 
-- **Q38 → Q39.** `Q38Picnic` asks which of four fridge items you'd take to a picnic,
-  giving no hint that the list matters. `Q39Recall` then asks you to name those four
-  from eight, where each of the four decoys is a near-miss of a real item (orange and
-  lemon shadow the apple and banana, sports drink shadows the protein shake, meatball
-  shadows the BLT). Correct recall reads as detail-orientation (`scope` negative);
-  confidently picking items that were never there reads as gist-thinking and nerve
-  (`scope` positive, `risk`) — the honesty consequences land in Q40.
-
-  These two must stay **adjacent and in order** — Q39's prompt says "the previous
-  question" — and Q39's four real labels must match Q38's options verbatim. Don't slip
-  an interlude between them. Unlike the `$state` pairs above there's no fallback to
-  write: a deep-link straight to Q39 just means the taker is guessing, which is
-  acceptable for a debug tool.
+*(The picnic/recall pair that used to live here was cut. `memory-claim` → `recall-trap`
+replaced it and is a `$state` coupling, documented above — not a sequence one.)*
 
 - **Q39 → Q40.** `Q40Memory` then asks, on a plain five-point agree/disagree scale,
   whether you consider yourself to have a good memory. `Q39Recall` writes its verdict

@@ -17,36 +17,53 @@ test('normalizes the three authored music rates without non-finite values', () =
 	assert.equal(normalizeMusicRate(Number.POSITIVE_INFINITY), 1);
 });
 
-test('schedules fast and normal rates on the same live source without stale automation', () => {
+test('reverses a live rate ramp from its held value and reaches the exact endpoint one second later', () => {
 	/** @type {Array<Array<number | string>>} */
 	const calls = [];
 	const param = {
 		value: 1,
 		cancelScheduledValues: (/** @type {number} */ time) => calls.push(['cancel', time]),
+		cancelAndHoldAtTime: (/** @type {number} */ time) => calls.push(['hold', time]),
 		setValueAtTime(/** @type {number} */ value, /** @type {number} */ time) {
-			this.value = value;
 			calls.push(['value', value, time]);
 		},
-		setTargetAtTime(
-			/** @type {number} */ value,
-			/** @type {number} */ time,
-			/** @type {number} */ constant
-		) {
-			calls.push(['target', value, time, constant]);
+		exponentialRampToValueAtTime(/** @type {number} */ value, /** @type {number} */ time) {
+			calls.push(['exponential', value, time]);
 		}
 	};
 
 	scheduleMusicRate(param, 5, 10, 1);
-	scheduleMusicRate(param, 1, 11, 1);
-	assert.deepEqual(calls.at(-2), ['target', 1, 11, 0.2]);
-	assert.deepEqual(calls.at(-1), ['value', 1, 12]);
-	assert.equal(param.value, 1);
+	const heldAtFortyPercent = Math.pow(5, 0.4);
+	scheduleMusicRate(param, 1, 10.4, 1, heldAtFortyPercent);
 
-	scheduleMusicRate(param, 1 / 3, 12, 1);
-	scheduleMusicRate(param, 1, 13, 1);
-	assert.deepEqual(calls.at(-2), ['target', 1, 13, 0.2]);
-	assert.deepEqual(calls.at(-1), ['value', 1, 14]);
-	assert.equal(param.value, 1);
+	assert.deepEqual(calls, [
+		['hold', 10],
+		['exponential', 5, 11],
+		['hold', 10.4],
+		['exponential', 1, 11.4]
+	]);
+});
+
+test('uses the computed mid-ramp value when cancelAndHoldAtTime is unavailable', () => {
+	/** @type {Array<Array<number | string>>} */
+	const calls = [];
+	const param = {
+		value: 1,
+		cancelScheduledValues: (/** @type {number} */ time) => calls.push(['cancel', time]),
+		setValueAtTime: (/** @type {number} */ value, /** @type {number} */ time) =>
+			calls.push(['value', value, time]),
+		exponentialRampToValueAtTime: (/** @type {number} */ value, /** @type {number} */ time) =>
+			calls.push(['exponential', value, time])
+	};
+	const heldAtHalfway = Math.sqrt(5);
+
+	scheduleMusicRate(param, 1, 4.5, 1, heldAtHalfway);
+
+	assert.deepEqual(calls, [
+		['cancel', 4.5],
+		['value', heldAtHalfway, 4.5],
+		['exponential', 1, 5.5]
+	]);
 });
 
 test('reconstructs the remastered default music mix and applies ducking', () => {

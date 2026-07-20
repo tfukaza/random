@@ -13,6 +13,8 @@
 	import { VIEW, CX, CY, SUN_R, PLANETS, MOON, polar, angleOf, norm } from '$lib/orbits.js';
 	import { approximateAngles } from '$lib/orbits.js';
 	import { playSfx } from '$lib/audio/audio.svelte.js';
+	import { recordDraft } from '$lib/questions/metrics.svelte.js';
+	import SubmitAnswer from './SubmitAnswer.svelte';
 
 	let { onAnswer } = $props();
 
@@ -25,7 +27,7 @@
 
 	// A pleasing default spread so the diagram doesn't open in a straight line.
 	const angles = tweened(
-		{ mercury: 35, venus: 145, earth: 250, mars: 20, moon: 60 },
+		/** @type {Record<string, number>} */ ({ mercury: 35, venus: 145, earth: 250, mars: 20, moon: 60 }),
 		{ duration: 0, easing: cubicOut }
 	);
 
@@ -52,7 +54,11 @@
 
 	/** @param {string} id @param {number} deg */
 	function setAngle(id, deg) {
-		angles.update((a) => ({ ...a, [id]: norm(deg) }), { duration: 0 });
+		angles.update((a) => {
+			const next = { ...a, [id]: norm(deg) };
+			recordDraft({ format: 'configuration', value: next });
+			return next;
+		}, { duration: 0 });
 	}
 
 	/** @param {string} id @param {PointerEvent} e */
@@ -96,6 +102,7 @@
 	function commit() {
 		if (committed) return;
 		committed = true;
+		recordDraft({ format: 'configuration', value: $angles });
 		// Tightly clustered vs. evenly scattered planets: herding everything to
 		// one side is a dramatic, composed gesture; even spacing is bookkeeping.
 		const spread = PLANETS.map((p) => $angles[p.id]).sort((a, b) => a - b);
@@ -140,6 +147,7 @@
 				role="slider"
 				tabindex="0"
 				aria-label="{p.label} orbital position"
+				data-reader-option="{p.label} orbital position"
 				aria-valuemin={0}
 				aria-valuemax={360}
 				aria-valuenow={Math.round($angles[p.id])}
@@ -149,7 +157,7 @@
 				<!-- Oversized transparent target: the planets themselves are tiny -->
 				<circle class="hit" cx={pos.x} cy={pos.y} r="17" />
 				<circle class="planet" cx={pos.x} cy={pos.y} r={p.r} />
-				<text class="tag" x={pos.x} y={pos.y - p.r - 8}>{p.label}</text>
+				<text class="tag" data-reader-svg-label x={pos.x} y={pos.y - p.r - 8}>{p.label}</text>
 			</g>
 		{/each}
 
@@ -159,6 +167,7 @@
 			role="slider"
 			tabindex="0"
 			aria-label="Moon orbital position"
+			data-reader-option="Moon orbital position"
 			aria-valuemin={0}
 			aria-valuemax={360}
 			aria-valuenow={Math.round($angles.moon)}
@@ -167,7 +176,7 @@
 		>
 			<circle class="hit" cx={moonPos.x} cy={moonPos.y} r="14" />
 			<circle class="moon" cx={moonPos.x} cy={moonPos.y} r={MOON.r} />
-			<text class="tag" x={moonPos.x} y={moonPos.y - MOON.r - 7}>{MOON.label}</text>
+			<text class="tag" data-reader-svg-label x={moonPos.x} y={moonPos.y - MOON.r - 7}>{MOON.label}</text>
 		</g>
 	</svg>
 
@@ -175,7 +184,12 @@
 		<button class="ghost" onclick={useToday} disabled={committed}>
 			Use today’s actual positions
 		</button>
-		<button class="next" onclick={commit} disabled={committed}>Lock in this alignment →</button>
+		<SubmitAnswer
+			{committed}
+			label="Lock in this alignment →"
+			margin="0"
+			onsubmit={commit}
+		/>
 	</div>
 </div>
 
@@ -258,8 +272,7 @@
 		justify-content: space-between;
 		gap: 0.75rem;
 	}
-	.ghost,
-	.next {
+	.ghost {
 		padding: 0.75rem 1.5rem;
 		font: inherit;
 		font-weight: 600;
@@ -277,16 +290,7 @@
 	.ghost:hover:not(:disabled) {
 		background: var(--accent-soft);
 	}
-	.next {
-		background: var(--ink);
-		color: var(--surface);
-		border: none;
-	}
-	.next:hover:not(:disabled) {
-		filter: brightness(1.15);
-	}
-	.ghost:disabled,
-	.next:disabled {
+	.ghost:disabled {
 		opacity: 0.5;
 		cursor: default;
 	}
@@ -294,8 +298,7 @@
 		.actions {
 			flex-direction: column;
 		}
-		.ghost,
-		.next {
+		.ghost {
 			width: 100%;
 		}
 	}

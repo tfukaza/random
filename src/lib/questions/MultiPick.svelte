@@ -1,9 +1,11 @@
 <script>
 	// Shared presentational helper for multi-select questions: toggle any number
-	// of chips (including zero), then hit submit to commit. Score deltas from
+	// of chips, or explicitly choose none, then hit submit to commit. Score deltas from
 	// every selected option are summed before being handed to onAnswer.
 	import SplitText from '$lib/SplitText.svelte';
 	import { cascade, ITEM_MS } from '$lib/reveal.js';
+	import { recordDraft } from '$lib/questions/metrics.svelte.js';
+	import SubmitAnswer from './SubmitAnswer.svelte';
 
 	// `onPick` is optional and fires on submit with the selected indices, for
 	// questions that need to judge *which* options were chosen rather than just
@@ -23,15 +25,37 @@
 	});
 
 	let selected = $state(new Set());
+	let noneSelected = $state(false);
+	let committed = $state(false);
 
 	/** @param {number} i */
 	function toggle(i) {
+		if (committed) return;
 		const next = new Set(selected);
-		next.has(i) ? next.delete(i) : next.add(i);
+		if (next.has(i)) {
+			next.delete(i);
+		} else {
+			next.add(i);
+		}
+		noneSelected = false;
 		selected = next;
+		recordDraft({
+			format: 'multi-choice',
+			value: [...selected].map((index) => options[index].id ?? index),
+			labels: [...selected].map((index) => options[index].label)
+		});
+	}
+
+	function chooseNone() {
+		if (committed) return;
+		selected = new Set();
+		noneSelected = true;
+		recordDraft({ format: 'multi-choice', value: [], labels: ['None of these'] });
 	}
 
 	function submit() {
+		if ((!selected.size && !noneSelected) || committed) return;
+		committed = true;
 		/** @type {Record<string, number>} */
 		const delta = {};
 		for (const i of selected) {
@@ -52,19 +76,40 @@
 			<button
 				class="chip"
 				data-sfx="ui-toggle"
+				data-reader-option={opt.readerLabel ?? opt.label}
+				data-answer-id={opt.id ?? i}
+				aria-pressed={selected.has(i)}
 				class:on={selected.has(i)}
 				style="animation-delay: {seq.chips + i * ITEM_MS}ms"
+				disabled={committed}
 				onclick={() => toggle(i)}
 			>
-				<span class="box">{selected.has(i) ? '✓' : ''}</span>
-				<span class="label">{opt.label}</span>
+				<span class="box" data-reader-label>{selected.has(i) ? '✓' : ''}</span>
+				<span class="label" data-reader-label>{opt.label}</span>
 			</button>
 		{/each}
+		<button
+			class="chip"
+			data-sfx="ui-toggle"
+			data-reader-option="None of these"
+			data-answer-id="none"
+			aria-pressed={noneSelected}
+			class:on={noneSelected}
+			disabled={committed}
+			onclick={chooseNone}
+		>
+			<span class="box" data-reader-label>{noneSelected ? '✓' : ''}</span>
+			<span class="label" data-reader-label>None of these</span>
+		</button>
 	</div>
 
-	<button class="submit" onclick={submit} style="animation-delay: {seq.submit}ms">
-		{selected.size ? `Submit (${selected.size} selected) →` : 'Submit — none of these →'}
-	</button>
+	<SubmitAnswer
+		disabled={!selected.size && !noneSelected}
+		{committed}
+		delay={seq.submit}
+		label={selected.size ? `Submit (${selected.size} selected) →` : 'Submit — none of these →'}
+		onsubmit={submit}
+	/>
 </div>
 
 <style>
@@ -127,22 +172,5 @@
 	.label {
 		font-size: 1.05rem;
 		font-weight: 500;
-	}
-	.submit {
-		animation: rise 0.42s both;
-		display: block;
-		margin-left: auto;
-		padding: 0.75rem 1.5rem;
-		background: var(--ink);
-		color: var(--bg);
-		border: none;
-		border-radius: var(--radius);
-		font: inherit;
-		font-weight: 600;
-		cursor: pointer;
-		transition: background 0.25s ease;
-	}
-	.submit:hover {
-		background: #0f0f0f;
 	}
 </style>

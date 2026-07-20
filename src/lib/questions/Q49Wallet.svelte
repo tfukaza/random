@@ -8,7 +8,7 @@
 	// across to the little figure labelled "You". Slide all the way and the
 	// wallet is bare.
 	import SliderPick from './SliderPick.svelte';
-	import { ledger } from './ledger.svelte.js';
+	import { latestResponse } from '$lib/questions/metrics.svelte.js';
 
 	let { onAnswer } = $props();
 
@@ -53,7 +53,7 @@
 		// The double-lie check: Q48 asked, in so many words, whether they would
 		// do this. Claiming 6–7 honesty and then pocketing half the cash costs
 		// extra; claiming 1–2 and returning every dollar earns it back.
-		const claim = ledger.answers.q48?.value;
+		const claim = latestResponse('honesty-claim')?.value;
 		if (typeof claim === 'number') {
 			if (claim >= 6 && share >= 0.5) delta.honesty -= 3;
 			else if (claim <= 2 && share === 0) delta.honesty += 2;

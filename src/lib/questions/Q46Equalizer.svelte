@@ -11,6 +11,8 @@
 	import SplitText from '$lib/SplitText.svelte';
 	import { cascade } from '$lib/reveal.js';
 	import { playSfx } from '$lib/audio/audio.svelte.js';
+	import { recordDraft } from '$lib/questions/metrics.svelte.js';
+	import SubmitAnswer from './SubmitAnswer.svelte';
 
 	let { onAnswer } = $props();
 
@@ -110,6 +112,7 @@
 		const next = Math.max(MIN_DB, Math.min(MAX_DB, db));
 		if (gains[i] === next) return;
 		gains[i] = next;
+		recordDraft({ format: 'configuration', value: [...gains], labels: gains.map(fmt) });
 		const now = performance.now();
 		if (now - lastDetent >= 55) {
 			lastDetent = now;
@@ -155,6 +158,7 @@
 	function flatten() {
 		if (committed) return;
 		gains = BANDS.map(() => 0);
+		recordDraft({ format: 'configuration', value: [...gains], labels: gains.map(fmt) });
 	}
 
 	// Placeholder scoring, consistent with every other question — real categories
@@ -190,6 +194,7 @@
 	function commit() {
 		if (committed) return;
 		committed = true;
+		recordDraft({ format: 'configuration', value: [...gains], labels: gains.map(fmt) });
 		// Deliberately not gated on having touched anything — a flat EQ is a
 		// position, and it scores as one.
 		setTimeout(() => onAnswer(scoreOf(gains)), 900);
@@ -247,6 +252,7 @@
 							role="slider"
 							tabindex="0"
 							aria-label={band.label}
+							data-reader-option="{band.label} level"
 							aria-orientation="vertical"
 							aria-valuemin={MIN_DB}
 							aria-valuemax={MAX_DB}
@@ -279,9 +285,13 @@
 		</div>
 	</div>
 
-	<button class="next" onclick={commit} disabled={committed} style="animation-delay: {seq.next}ms">
-		{committed ? 'Tuned.' : 'Next →'}
-	</button>
+	<SubmitAnswer
+		{committed}
+		label="Next →"
+		committedLabel="Tuned."
+		delay={seq.next}
+		onsubmit={commit}
+	/>
 </div>
 
 <style>
@@ -470,28 +480,6 @@
 
 	.panel.committed .thumb {
 		pointer-events: none;
-	}
-
-	.next {
-		animation: rise 0.42s both;
-		display: block;
-		margin: 1.75rem 0 0 auto;
-		padding: 0.75rem 1.5rem;
-		background: var(--ink);
-		color: var(--bg);
-		border: none;
-		border-radius: var(--radius);
-		font: inherit;
-		font-weight: 600;
-		cursor: pointer;
-		transition: background 0.25s ease;
-	}
-	.next:hover:not(:disabled) {
-		background: #0f0f0f;
-	}
-	.next:disabled {
-		opacity: 0.6;
-		cursor: default;
 	}
 
 	@media (max-width: 520px) {

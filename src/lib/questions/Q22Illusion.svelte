@@ -13,15 +13,19 @@
 	import SplitText from '$lib/SplitText.svelte';
 	import { cascade, ITEM_MS } from '$lib/reveal.js';
 	import { playSfx } from '$lib/audio/audio.svelte.js';
+	import { sharpenAgainstDetailClaim } from './detailClaim.js';
+	import SubmitAnswer from './SubmitAnswer.svelte';
+	import { recordDraft } from '$lib/questions/metrics.svelte.js';
 	let { onAnswer } = $props();
 
 	const seq = $derived.by(() => {
 		const c = cascade();
-		return { prompt: c.text(prompt), rule: c.rule(), figure: c.block(), cards: c.items(options.length) };
+		return { prompt: c.text(prompt), rule: c.rule(), figure: c.block(), cards: c.items(options.length), submit: c.action() };
 	});
 
 	const prompt = 'Which orange circle looks bigger?';
 
+	/** @type {{ label: string, score: Record<string, number> }[]} */
 	const options = [
 		// left = contrarian (it's smaller AND illusion-shrunk); right = actually
 		// looked; "same" = pattern-matched the famous illusion and got burned.
@@ -32,17 +36,35 @@
 
 	/** @type {number | null} */
 	let picked = $state(null);
+	let committed = $state(false);
 
 	// 0 → 1 drives how far the reveal lines have drawn across the diagram.
 	const reveal = tweened(0, { duration: 1100, easing: cubicOut });
 
+	// The right circle really is bigger, so it is the only correct answer —
+	// including "same size", which is the confident wrong answer this question
+	// is built to catch.
+	const CORRECT = 1;
+
 	/** @param {number} i */
 	function choose(i) {
+		if (committed) return;
 		picked = i;
+		recordDraft({ format: 'single-choice', value: i, label: options[i].label });
+	}
+
+	function submit() {
+		const choice = picked;
+		if (choice === null || committed) return;
+		committed = true;
 		void playSfx('illusion-reveal');
 		reveal.set(1, { delay: 200 });
+		// Anyone who claimed to be meticulous back in chapter 1 pays extra for
+		// missing this — the guide lines are about to show them exactly what they
+		// missed, which is the whole reason this is the right place to collect.
+		const delta = sharpenAgainstDetailClaim(options[choice].score, choice !== CORRECT);
 		// Let the reveal draw + a beat to absorb it, then advance.
-		setTimeout(() => onAnswer(options[i].score), 2600);
+		setTimeout(() => onAnswer(delta), 2600);
 	}
 
 	// Satellite ring positions, precomputed for the SVG.
@@ -114,15 +136,20 @@
 		{#each options as opt, i}
 			<button
 				class="card"
+				data-reader-option={opt.label}
+				data-answer-id={i}
+				aria-pressed={picked === i}
+				data-sfx="none"
 				class:picked={picked === i}
 				style="animation-delay: {seq.cards + i * ITEM_MS}ms"
-				disabled={picked !== null}
+				disabled={committed}
 				onclick={() => choose(i)}
 			>
-				{opt.label}
+				<span data-reader-label>{opt.label}</span>
 			</button>
 		{/each}
 	</div>
+	<SubmitAnswer disabled={picked === null} {committed} delay={seq.submit} onsubmit={submit} />
 </div>
 
 <style>

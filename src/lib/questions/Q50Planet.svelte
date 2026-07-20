@@ -4,22 +4,58 @@
 		DAMAGE_RADIUS_RADIANS,
 		IMPACT_DIRECTION,
 		TARGETS,
+		impactWindow,
 		damageAt,
 		displayPercentages,
 		scoreImpact
 	} from './q50PlanetModel.js';
-	import {
-		audioState,
-		clearMusicDuck,
-		duckMusic,
-		playSfx,
-		setMusicTrack,
-		stopSfx
-	} from '$lib/audio/audio.svelte.js';
-	const COUNTDOWN_MS = 30000;
+	import { audio, audioState } from '$lib/audio/audio.svelte.js';
+	import { patience } from './patienceState.svelte.js';
+	import { deliveryState, recordDraft } from '$lib/questions/metrics.svelte.js';
+
+	// The finale takes the patience claim from chapter 3 at face value — the one
+	// place in the quiz where saying "I am patient" is simply believed.
+	//
+	// Only the endpoints, matching patienceMode(): a 2 or a 6 is a preference, a
+	// 1 or a 7 is a claim. Claim 1 and you get five seconds to aim an asteroid at
+	// a planet. Claim 7 and you get five minutes, which is still far longer than anyone will sit through, which
+	// is the joke — the question is not whether you can wait, it is whether you
+	// meant it.
+	//
+	// COUNTDOWN_MS is load-bearing beyond the readout: `approach` divides by it
+	// to drive the asteroid's visual descent, so the rock genuinely crawls across
+	// five minutes and genuinely screams in over five seconds. Nothing needed rescaling.
+	//
+	// Read at mount from the raw claim, NOT from patienceMode() — bailing out of
+	// the slow lens sets bailed, which would quietly hand a self-declared patient
+	// taker the default thirty seconds and lose the payoff.
+	//
+	// The premise states the window OUT LOUD, so duration and phrasing live in
+	// one record and are destructured together. They were briefly separate
+	// constants and the prompt immediately went stale, claiming thirty seconds
+	// while the clock ran five. This question is the last thing the quiz says;
+	// it cannot be wrong about its own rules.
+	// 4, 5 and 6 fall through to the default — no claim was made, so no
+	// consequence is collected. The shared model also uses this duration to
+	// align the finite score, keeping the spoken premise and music inseparable.
+	const { ms: COUNTDOWN_MS, phrase: windowPhrase } = impactWindow(patience.value);
 	const DEBUG_DISPLAY_SECONDS = 9999;
 
-	let { onAnswer } = $props();
+	// Tenths below a minute, m:ss above it — "T−1800.0" reads as a number rather
+	// than as a duration, which is the one thing this readout has to convey.
+	/** @param {number} s */
+	function formatRemaining(s) {
+		if (s < 60) return s.toFixed(1);
+		const m = Math.floor(s / 60);
+		return `${m}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+	}
+
+	let {
+		onAnswer,
+		musicCue = null,
+		onMusicSync = () => null,
+		musicStartAfterMs = 0
+	} = $props();
 
 	/** @type {HTMLCanvasElement | undefined} */
 	let canvas = $state();
@@ -37,6 +73,10 @@
 	let whiteoutHeight = $state(0);
 	let whiteoutX = $state(0);
 	let whiteoutY = $state(0);
+	let sceneClockPaused = $state(false);
+	let cueOutcome = $state(audioState.enabled ? 'pending' : 'silent');
+	let lateMusicCue = $state.raw(/** @type {any} */ (null));
+	let needsMusicSync = $state(false);
 
 	let sortedDamage = $derived([...damage].sort((a, b) => b.share - a.share));
 	let affectedDamage = $derived(sortedDamage.filter((item) => item.percent > 0));
@@ -51,13 +91,67 @@
 	/** @type {(enabled: boolean) => void} */
 	let setDebugMode = () => {};
 	let answerSent = false;
-	/** Assigned once the Three.js runtime is ready; used to retry timer startup
-	 * when the asynchronously loaded asteroid score actually begins playing. */
+	/** Assigned once the Three.js runtime is ready. */
 	let tryBeginTimer = () => {};
+	let syncSceneClock = () => {};
+	let syncLateMusic = () => {};
+	/** @type {ReturnType<typeof audio.sfx.createScope> | null} */
+	let sceneSounds = null;
+	let previousAudioEnabled = audioState.enabled;
+	let previousAudioStatus = audioState.status;
 
 	$effect(() => {
-		if (!audioState.enabled || audioState.musicTrack === 'asteroid' || audioState.musicFailed)
+		const enabled = audioState.enabled;
+		const status = audioState.status;
+		deliveryState.locked;
+		if (enabled && !previousAudioEnabled) {
+			// Muting keeps an already-running finite cue on its timeline. Only a
+			// scene that genuinely missed the cue needs an offset restart.
+			if (audioState.activeTrack === 'asteroid') {
+				needsMusicSync = false;
+				cueOutcome = 'playing';
+			} else {
+				needsMusicSync = true;
+				cueOutcome = 'pending';
+				syncLateMusic();
+			}
+		} else if (!enabled) {
+			needsMusicSync = false;
+			lateMusicCue = null;
+			cueOutcome = 'silent';
 			tryBeginTimer();
+		}
+		if (enabled && previousAudioStatus === 'error' && status === 'loading') {
+			// A user-initiated retry rebuilds the graph. Replace the old failed cue
+			// with a fresh request at the scene's current aligned offset while that
+			// recovery is still in flight.
+			needsMusicSync = true;
+			cueOutcome = 'pending';
+			syncLateMusic();
+		}
+		previousAudioEnabled = enabled;
+		previousAudioStatus = status;
+		syncSceneClock();
+	});
+
+	$effect(() => {
+		const request = lateMusicCue ?? musicCue;
+		if (!audioState.enabled) return;
+		if (needsMusicSync || !request?.whenStarted) {
+			cueOutcome = 'pending';
+			return;
+		}
+		cueOutcome = 'pending';
+		let current = true;
+		request.whenStarted.then((/** @type {'playing' | 'silent' | 'superseded' | 'failed'} */ outcome) => {
+			if (!current) return;
+			// A superseded request is followed by a new prop; it must not release
+			// the countdown in the gap between those two intents.
+			if (outcome === 'superseded') return;
+			cueOutcome = outcome;
+			tryBeginTimer();
+		});
+		return () => (current = false);
 	});
 
 	/** @param {Event} event */
@@ -67,7 +161,7 @@
 
 	/** @param {KeyboardEvent} event */
 	function handleKey(event) {
-		if (phase !== 'active') return;
+		if (phase !== 'active' || sceneClockPaused) return;
 		const amount = ((event.shiftKey ? 15 : 5) * Math.PI) / 180;
 		if (event.key === 'ArrowLeft') rotatePlanet('y', -amount);
 		else if (event.key === 'ArrowRight') rotatePlanet('y', amount);
@@ -76,17 +170,21 @@
 		else if (event.key.toLowerCase() === 'r') rotatePlanet('y', 0);
 		else return;
 		event.preventDefault();
-		void playSfx('slider-detent', { rate: event.key.toLowerCase() === 'r' ? 0.8 : 1 });
+		void sceneSounds?.play('slider-detent', {
+			rate: event.key.toLowerCase() === 'r' ? 0.8 : 1
+		});
 	}
 
 	function continueWithoutAnswer() {
 		if (answerSent) return;
 		answerSent = true;
+		recordDraft({ format: 'automatic', value: 'scene-unavailable', label: 'continued' });
 		onAnswer({});
 	}
 
 	onMount(() => {
-		void setMusicTrack('asteroid', { restart: true });
+		sceneSounds = audio.sfx.createScope('asteroid-impact');
+		let releaseImpactDuck = () => {};
 		let disposed = false;
 		let cleanupRuntime = () => {};
 
@@ -112,7 +210,7 @@
 			renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 			const labelRenderer = new CSS2DRenderer();
-			labelRenderer.domElement.className = 'q50-label-layer';
+			labelRenderer.domElement.className = 'asteroid-impact-label-layer';
 			labelRenderer.domElement.setAttribute('aria-hidden', 'true');
 			viewportElement.append(labelRenderer.domElement);
 
@@ -224,7 +322,7 @@
 				planetGroup.add(mesh);
 
 				const label = document.createElement('div');
-				label.className = 'q50-target-label';
+				label.className = 'asteroid-impact-target-label';
 				const name = document.createElement('span');
 				name.textContent = target.label;
 				const value = document.createElement('strong');
@@ -484,7 +582,7 @@
 			}
 
 			rotatePlanet = (axis, angle) => {
-				if (phase !== 'active') return;
+				if (phase !== 'active' || sceneClockPaused) return;
 				if (angle === 0) planetGroup.quaternion.identity();
 				else {
 					const vector = axis === 'x' ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
@@ -519,18 +617,24 @@
 			}
 			/** @param {PointerEvent} event */
 			function pointerDown(event) {
-				if (phase !== 'active') return;
+				if (phase !== 'active' || sceneClockPaused) return;
 				pointerId = event.pointerId;
 				canvasRect = null; // re-measure once at the start of each drag
 				previousArcball = arcballPoint(event);
 				canvasElement.setPointerCapture(pointerId);
 				canvasElement.classList.add('is-dragging');
-				void playSfx('drag-pickup', { volume: 0.7 });
+				void sceneSounds?.play('drag-pickup', { volume: 0.7 });
 				canvasElement.focus();
 			}
 			/** @param {PointerEvent} event */
 			function pointerMove(event) {
-				if (event.pointerId !== pointerId || !previousArcball || phase !== 'active') return;
+				if (
+					event.pointerId !== pointerId ||
+					!previousArcball ||
+					phase !== 'active' ||
+					sceneClockPaused
+				)
+					return;
 				event.preventDefault();
 				const current = arcballPoint(event);
 				const rotation = new THREE.Quaternion().setFromUnitVectors(previousArcball, current);
@@ -544,7 +648,7 @@
 				pointerId = -1;
 				previousArcball = null;
 				canvasElement.classList.remove('is-dragging');
-				void playSfx('drop-valid', { volume: 0.65, rate: 0.9 });
+				void sceneSounds?.play('drop-valid', { volume: 0.65, rate: 0.9 });
 			}
 			canvasElement.addEventListener('pointerdown', pointerDown);
 			canvasElement.addEventListener('pointermove', pointerMove);
@@ -554,38 +658,91 @@
 			let deadline = 0;
 			let pausedRemainingMs = COUNTDOWN_MS;
 			let impactStarted = 0;
+			let pausedImpactElapsed = 0;
 			let finalScore = {};
 			let lastTimerPaint = 0;
 			let lastWarningSecond = 9;
 			let impactSoundPlayed = false;
 			let whiteoutStarted = false;
+			let delayedMusicRequested = musicStartAfterMs <= 0;
 			const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+			function clockIsBlocked() {
+				return (
+					document.hidden ||
+					deliveryState.locked ||
+					(audioState.enabled &&
+					['locked', 'loading', 'interrupted', 'recoverable'].includes(audioState.status))
+				);
+			}
+
+			/** @param {number} [now] */
+			function countdownTimeLeft(now = performance.now()) {
+				if (debugInfinite || sceneClockPaused || deadline === 0) return pausedRemainingMs;
+				return Math.max(0, deadline - now);
+			}
+
 			function beginTimer() {
-				if (phase !== 'ready' || document.hidden) return;
-				// A browser cannot autoplay a debug deep link. Hold the countdown at
-				// 30 until the first gesture unlocks the dedicated cue, then launch
-				// both clocks together so the authored silent tail stays in sync.
-				if (
-					audioState.enabled &&
-					audioState.musicTrack !== 'asteroid' &&
-					!audioState.musicFailed
-				)
-					return;
+				if (phase !== 'ready' || clockIsBlocked() || cueOutcome === 'pending') return;
+				// The exact request from +page has either started, failed, or declared
+				// intentional silence. Only that request may release the scene clock.
 				deadline = performance.now() + pausedRemainingMs;
 				remaining = debugInfinite ? DEBUG_DISPLAY_SECONDS : pausedRemainingMs / 1000;
 				phase = 'active';
 			}
 			tryBeginTimer = beginTimer;
 
+			syncLateMusic = () => {
+				if (!needsMusicSync || !audioState.enabled || phase === 'loading') return;
+				// Once impact has begun, natural completion is final; enabling sound
+				// must not resurrect the finite score during its aftermath.
+				if (phase !== 'ready' && phase !== 'active') {
+					needsMusicSync = false;
+					cueOutcome = 'silent';
+					return;
+				}
+				const elapsedMs = Math.max(
+					0,
+					Math.min(COUNTDOWN_MS, COUNTDOWN_MS - countdownTimeLeft())
+				);
+				const request = onMusicSync(elapsedMs / 1000);
+				if (!request) return;
+				lateMusicCue = request;
+				needsMusicSync = false;
+				if (elapsedMs >= musicStartAfterMs) delayedMusicRequested = true;
+			};
+
+			syncSceneClock = () => {
+				if (clockIsBlocked()) {
+					if (sceneClockPaused) return;
+					sceneClockPaused = true;
+					const now = performance.now();
+					if (phase === 'active' && !debugInfinite) {
+						pausedRemainingMs = Math.max(0, deadline - now);
+						deadline = 0;
+					} else if (phase === 'impact') {
+						pausedImpactElapsed = Math.max(0, now - impactStarted);
+						impactStarted = 0;
+					}
+					return;
+				}
+				if (sceneClockPaused) {
+					sceneClockPaused = false;
+					const now = performance.now();
+					if (phase === 'active' && !debugInfinite) deadline = now + pausedRemainingMs;
+					else if (phase === 'impact') impactStarted = now - pausedImpactElapsed;
+				}
+				if (interactionVisible) beginTimer();
+			};
+
 			setDebugMode = (enabled) => {
 				const now = performance.now();
 				if (phase === 'active') {
 					if (enabled && !debugInfinite) {
-						pausedRemainingMs = Math.max(0, deadline - now);
+						pausedRemainingMs = countdownTimeLeft(now);
 						remaining = DEBUG_DISPLAY_SECONDS;
 					} else if (!enabled && debugInfinite) {
-						deadline = now + pausedRemainingMs;
+						deadline = clockIsBlocked() ? 0 : now + pausedRemainingMs;
 						remaining = pausedRemainingMs / 1000;
 					}
 				} else {
@@ -595,23 +752,28 @@
 			};
 
 			commitOrientation = (autoLocked) => {
-				if (phase !== 'active') return;
+				if (phase !== 'active' || sceneClockPaused) return;
 				// A rotation from this same frame may still be queued, and the score is
 				// taken from `damage` on the next line.
 				flushDamage();
-				const timeLeft = debugInfinite
-					? pausedRemainingMs
-					: Math.max(0, deadline - performance.now());
+				const timeLeft = countdownTimeLeft();
 				const elapsedMs = autoLocked ? COUNTDOWN_MS : COUNTDOWN_MS - timeLeft;
 				finalScore = scoreImpact(damage, { elapsedMs, autoLocked });
+				recordDraft({
+					format: 'timed-scene',
+					value: displayPercentages(damage),
+					label: autoLocked ? 'timeout' : 'locked'
+				});
 				impactTravelStart.copy(asteroid.position);
 				remaining = 0;
 				phase = 'impact';
 				impactStarted = performance.now();
+				pausedImpactElapsed = 0;
 				// The dedicated score has its own silent tail at the natural deadline;
 				// an early lock creates the same breath before the external impact.
-				duckMusic('asteroid', 0);
-				void playSfx('asteroid-approach');
+				releaseImpactDuck();
+				releaseImpactDuck = audio.music.duck('asteroid-impact', 0);
+				void sceneSounds?.play('asteroid-approach');
 			};
 
 			let interactionVisible = false;
@@ -624,6 +786,7 @@
 			);
 			intersectionObserver.observe(viewportElement);
 			const visibilityChanged = () => {
+				syncSceneClock();
 				if (!document.hidden && interactionVisible) beginTimer();
 			};
 			document.addEventListener('visibilitychange', visibilityChanged);
@@ -642,6 +805,8 @@
 
 			updateDamage();
 			phase = 'ready';
+			syncLateMusic();
+			syncSceneClock();
 
 			// Reused every frame by the label-facing loop below.
 			const scratchNormal = new THREE.Vector3();
@@ -657,12 +822,26 @@
 				asteroid.rotation.x += 0.002;
 				asteroid.rotation.y += 0.003;
 
-				if (phase === 'active' && !debugInfinite && now - lastTimerPaint > 50) {
+				if (
+					!sceneClockPaused &&
+					phase === 'active' &&
+					!debugInfinite &&
+					now - lastTimerPaint > 50
+				) {
 					remaining = Math.max(0, (deadline - now) / 1000);
+					const elapsedMs = Math.max(0, COUNTDOWN_MS - Math.max(0, deadline - now));
+					if (
+						!delayedMusicRequested &&
+						audioState.enabled &&
+						elapsedMs >= musicStartAfterMs
+					) {
+						needsMusicSync = true;
+						syncLateMusic();
+					}
 					const warningSecond = Math.ceil(remaining);
 					if (remaining > 0 && remaining <= 8 && warningSecond < lastWarningSecond) {
 						lastWarningSecond = warningSecond;
-						void playSfx('asteroid-warning', {
+						void sceneSounds?.play('asteroid-warning', {
 							rate: 1 + (8 - warningSecond) * 0.04
 						});
 					}
@@ -672,7 +851,7 @@
 					if (remaining <= 0) commitOrientation(true);
 				}
 
-				if (phase === 'impact') {
+				if (!sceneClockPaused && phase === 'impact') {
 					const elapsed = now - impactStarted;
 					const travelDuration = reduceMotion ? 1 : 750;
 					const progress = Math.min(1, elapsed / travelDuration);
@@ -688,8 +867,8 @@
 							const frameBounds =
 								viewportElement.closest('.frame')?.getBoundingClientRect() ?? viewportBounds;
 							const q50Bounds =
-								viewportElement.closest('.q50')?.getBoundingClientRect() ?? frameBounds;
-							// The overlay is positioned inside `.q50`, so its rectangle and its
+								viewportElement.closest('.asteroid-impact')?.getBoundingClientRect() ?? frameBounds;
+							// The overlay is positioned inside `.asteroid-impact`, so its rectangle and its
 							// circle origin must both use that same coordinate space.
 							whiteoutLeft = frameBounds.left - q50Bounds.left;
 							whiteoutTop = frameBounds.top - q50Bounds.top;
@@ -699,7 +878,7 @@
 								viewportBounds.left + viewportBounds.width / 2 - frameBounds.left;
 							whiteoutY =
 								viewportBounds.top + viewportBounds.height / 2 - frameBounds.top;
-							void playSfx('asteroid-impact', { tag: 'asteroid-impact' });
+							void sceneSounds?.play('asteroid-impact');
 						}
 						asteroid.visible = false;
 						pulse.visible = true;
@@ -763,8 +942,9 @@
 
 			cleanupRuntime = () => {
 				tryBeginTimer = () => {};
-				stopSfx('asteroid-impact');
-				clearMusicDuck('asteroid');
+				sceneSounds?.stop();
+				releaseImpactDuck();
+				releaseImpactDuck = () => {};
 				renderer.setAnimationLoop(null);
 				intersectionObserver.disconnect();
 				resizeObserver.disconnect();
@@ -805,12 +985,17 @@
 			commitOrientation = () => {};
 			rotatePlanet = () => {};
 			setDebugMode = () => {};
+			tryBeginTimer = () => {};
+			syncSceneClock = () => {};
+			syncLateMusic = () => {};
 			cleanupRuntime();
+			sceneSounds?.dispose();
+			sceneSounds = null;
 		};
 	});
 </script>
 
-<section class="q50">
+<section class="asteroid-impact" class:scene-paused={sceneClockPaused}>
 	{#if whiteout}
 		<div
 			class="whiteout"
@@ -818,11 +1003,11 @@
 			aria-hidden="true"
 		></div>
 	{/if}
-	<p class="premise">
-		You created this world. It is inhabited. An asteroid will strike in thirty seconds. It
+	<p class="premise" data-reader-text>
+		You created this world. It is inhabited. An asteroid will strike in {windowPhrase}. It
 		cannot be diverted. You may rotate the planet.
 	</p>
-	<h2>Choose the point of impact.</h2>
+	<h2 data-reader-text>Choose the point of impact.</h2>
 
 	<div class="instrument">
 		{#if phase === 'error'}
@@ -840,9 +1025,9 @@
 					role="timer"
 					aria-label={debugInfinite
 						? 'Countdown suspended for debugging'
-						: `${remaining.toFixed(1)} seconds remaining`}
+						: `${remaining.toFixed(0)} seconds remaining`}
 				>
-					T−{remaining.toFixed(1)}
+					T−{formatRemaining(remaining)}
 				</strong>
 				<canvas
 					bind:this={canvas}
@@ -879,7 +1064,7 @@
 </section>
 
 <style>
-	.q50 {
+	.asteroid-impact {
 		position: relative;
 		animation: rise 0.45s both;
 	}
@@ -890,6 +1075,9 @@
 		clip-path: circle(0 at var(--impact-x) var(--impact-y));
 		pointer-events: none;
 		animation: impact-whiteout 3s cubic-bezier(0.3, 0, 0.2, 1) forwards;
+	}
+	.scene-paused .whiteout {
+		animation-play-state: paused;
 	}
 	@keyframes impact-whiteout {
 		to {
@@ -956,13 +1144,13 @@
 	canvas:focus-visible {
 		outline: 2px solid var(--surface);
 	}
-	:global(.q50-label-layer) {
+	:global(.asteroid-impact-label-layer) {
 		position: absolute;
 		inset: 0;
 		pointer-events: none;
 		overflow: hidden;
 	}
-	:global(.q50-target-label) {
+	:global(.asteroid-impact-target-label) {
 		display: flex;
 		align-items: center;
 		gap: 0.3rem;
@@ -980,15 +1168,15 @@
 		transform: translateY(-0.45rem);
 		transition: opacity 80ms linear;
 	}
-	:global(.q50-target-label strong) {
+	:global(.asteroid-impact-target-label strong) {
 		font-variant-numeric: tabular-nums;
 		color: var(--muted);
 	}
-	:global(.q50-target-label.is-affected) {
+	:global(.asteroid-impact-target-label.is-affected) {
 		border-color: var(--ink);
 		font-weight: 700;
 	}
-	:global(.q50-target-label.is-affected strong) {
+	:global(.asteroid-impact-target-label.is-affected strong) {
 		color: var(--ink);
 	}
 	.damage-ledger {
@@ -1068,7 +1256,7 @@
 		.ledger-grid {
 			grid-template-columns: 1fr;
 		}
-		:global(.q50-target-label) {
+		:global(.asteroid-impact-target-label) {
 			font-size: 0.5rem;
 			max-width: 6.5rem;
 		}

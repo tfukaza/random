@@ -1,25 +1,36 @@
 <script>
 	// Shared presentational helper for "pick a color palette" questions. Each
 	// option renders as a strip of color swatches (no text — pure vibes) and
-	// auto-commits on click.
+	// commits only after the taker confirms the selected palette.
 	import SplitText from '$lib/SplitText.svelte';
 	import { cascade, ITEM_MS } from '$lib/reveal.js';
+	import SubmitAnswer from './SubmitAnswer.svelte';
+	import { recordDraft } from '$lib/questions/metrics.svelte.js';
 
 	let { prompt, options, onAnswer, onPick = () => {} } = $props();
 
 	const seq = $derived.by(() => {
 		const c = cascade();
-		return { prompt: c.text(prompt), rule: c.rule(), items: c.items(options.length) };
+		return { prompt: c.text(prompt), rule: c.rule(), items: c.items(options.length), submit: c.action() };
 	});
 
 	/** @type {number | null} */
 	let picked = $state(null);
+	let committed = $state(false);
 
 	/** @param {number} i */
 	function choose(i) {
+		if (committed) return;
 		picked = i;
 		onPick?.(i);
-		setTimeout(() => onAnswer(options[i].score), 320);
+		recordDraft({ format: 'palette-choice', value: options[i].id ?? i, label: options[i].readerLabel ?? options[i].label ?? `Option ${i + 1}` });
+	}
+
+	function submit() {
+		const choice = picked;
+		if (choice === null || committed) return;
+		committed = true;
+		setTimeout(() => onAnswer(options[choice].score), 320);
 	}
 </script>
 
@@ -30,9 +41,13 @@
 		{#each options as opt, i}
 			<button
 				class="card"
+				data-reader-option={opt.readerLabel ?? opt.label ?? `Color palette ${i + 1}`}
+				data-answer-id={opt.id ?? i}
+				aria-label={opt.readerLabel ?? opt.label ?? `Color palette ${i + 1}`}
+				aria-pressed={picked === i}
 				class:picked={picked === i}
 				style="animation-delay: {seq.items + i * ITEM_MS}ms"
-				disabled={picked !== null}
+				disabled={committed}
 				onclick={() => choose(i)}
 			>
 				{#each opt.palette as color, ci}
@@ -41,6 +56,7 @@
 			</button>
 		{/each}
 	</div>
+	<SubmitAnswer disabled={picked === null} {committed} delay={seq.submit} onsubmit={submit} />
 </div>
 
 <style>

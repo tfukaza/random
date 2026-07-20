@@ -13,7 +13,7 @@ export const ledger = $state({
 });
 
 /**
- * @param {string} id — question key, e.g. 'q1', 'q48'
+ * @param {string} id — question key, e.g. 'party', 'honesty-claim'
  * @param {{ index?: number, value?: number, label?: string }} entry
  */
 export function logAnswer(id, entry) {

@@ -11,6 +11,8 @@
 	import SplitText from '$lib/SplitText.svelte';
 	import { cascade } from '$lib/reveal.js';
 	import { playSfx } from '$lib/audio/audio.svelte.js';
+	import { recordDraft } from '$lib/questions/metrics.svelte.js';
+	import SubmitAnswer from './SubmitAnswer.svelte';
 
 	let { onAnswer } = $props();
 
@@ -52,7 +54,7 @@
 	const byId = (id) => /** @type {typeof ITEMS[number]} */ (ITEMS.find((it) => it.id === id));
 
 	// The dragged item is pulled out of its home so the layout doesn't jump while
-	// it's in the air — same trick as the backpack's pool.
+	// it's in the air — same trick as pack-box's pool.
 	const inTray = $derived(ITEMS.filter((it) => !(it.id in sides) && dragging?.id !== it.id));
 	const onLeft = $derived(ITEMS.filter((it) => sides[it.id] === 'left' && dragging?.id !== it.id));
 	const onRight = $derived(ITEMS.filter((it) => sides[it.id] === 'right' && dragging?.id !== it.id));
@@ -79,12 +81,14 @@
 		// Captured before the mutation below — the tray case needs to know which
 		// pan the item is leaving.
 		const from = sides[id];
+		// It was already on a pan, so this is a reweighing, not a first placement.
 		if (zone === 'tray') {
 			const { [id]: _, ...rest } = sides;
 			sides = rest;
 		} else {
 			sides = { ...sides, [id]: zone };
 		}
+		recordDraft({ format: 'configuration', value: sides });
 		// Dip toward whichever pan just took weight, then recover to level. Coming
 		// off the scale dips the *other* way, as unloading a real pan would.
 		if (zone === 'left') settleDir = -1;
@@ -142,6 +146,7 @@
 	function commit() {
 		if (committed || !loaded) return;
 		committed = true;
+		recordDraft({ format: 'configuration', value: sides });
 		// Placeholder scoring, consistent with every other question — real
 		// categories are deferred project-wide.
 		const placed = onLeft.length + onRight.length;
@@ -184,7 +189,7 @@
 					aria-label="Left pan"
 				>
 					{#each onLeft as item (item.id)}
-						<button class="chip" data-sfx="none" onpointerdown={(e) => startDrag(e, item.id)}>{item.label}</button>
+						<button class="chip" data-sfx="none" data-reader-option={item.label} onpointerdown={(e) => startDrag(e, item.id)}><span data-reader-label>{item.label}</span></button>
 					{/each}
 					{#if onLeft.length === 0}<span class="empty">empty</span>{/if}
 				</div>
@@ -205,7 +210,7 @@
 					aria-label="Right pan"
 				>
 					{#each onRight as item (item.id)}
-						<button class="chip" data-sfx="none" onpointerdown={(e) => startDrag(e, item.id)}>{item.label}</button>
+						<button class="chip" data-sfx="none" data-reader-option={item.label} onpointerdown={(e) => startDrag(e, item.id)}><span data-reader-label>{item.label}</span></button>
 					{/each}
 					{#if onRight.length === 0}<span class="empty">empty</span>{/if}
 				</div>
@@ -219,7 +224,7 @@
 		<p class="tray-label">On the table</p>
 		<div class="tray-items">
 			{#each inTray as item (item.id)}
-				<button class="chip" data-sfx="none" onpointerdown={(e) => startDrag(e, item.id)}>{item.label}</button>
+				<button class="chip" data-sfx="none" data-reader-option={item.label} onpointerdown={(e) => startDrag(e, item.id)}><span data-reader-label>{item.label}</span></button>
 			{/each}
 			{#if inTray.length === 0}<span class="empty">Everything is on the scale.</span>{/if}
 		</div>
@@ -231,14 +236,14 @@
 		</div>
 	{/if}
 
-	<button
-		class="next"
-		onclick={commit}
-		disabled={!loaded || committed}
-		style="animation-delay: {seq.next}ms"
-	>
-		{committed ? 'Noted, and never questioned.' : 'These are equal →'}
-	</button>
+	<SubmitAnswer
+		disabled={!loaded}
+		{committed}
+		label="These are equal →"
+		committedLabel="Noted, and never questioned."
+		delay={seq.next}
+		onsubmit={commit}
+	/>
 </div>
 
 <style>
@@ -462,24 +467,6 @@
 		transform: translate(-50%, -50%) rotate(-2deg);
 		pointer-events: none;
 		filter: drop-shadow(0 0.4rem 0.35rem rgba(0, 0, 0, 0.18));
-	}
-
-	.next {
-		animation: rise 0.42s both;
-		display: block;
-		margin-left: auto;
-		padding: 0.75rem 1.5rem;
-		background: var(--ink);
-		color: var(--bg);
-		border: none;
-		border-radius: var(--radius);
-		font: inherit;
-		font-weight: 600;
-		cursor: pointer;
-	}
-	.next:disabled {
-		opacity: 0.45;
-		cursor: default;
 	}
 
 	@media (max-width: 560px) {

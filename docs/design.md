@@ -28,10 +28,9 @@ Every question should serve at least one. Canonical built examples cited.
 Scenarios no sane instrument would pose, phrased with the gravity of a census
 form. The absurdity is in the premise, never in the delivery.
 
-Built: Q24 (permanent residence: submarine / blimp / space station), Q45
-(fifty floors of your building are underwater; how do you get groceries), Q36
-(would you buy this $4,800 lantern — name and price only), Q9 (one meal a
-year), Q10 (which floor of 100).
+Built: Q36 (would you buy this $4,800 lantern — name and price only), Q9 (one
+meal a year), the chapter-4 security-question run (favourite food → childhood
+street → mother's maiden name, asked in the same voice as everything else).
 
 ### P2 — The quiz validates you
 
@@ -39,22 +38,35 @@ Personality quizzes take your self-report at face value. This one **tests
 it**. Claims made in one question become claims examined by a later one — the
 quiz is running its own replication study on you, and it is not impressed.
 
-Built: Q29 → PatienceLens (you *said* you were patient; every following
-question in the band is now delivered at the speed you claimed to want), Q38 → Q39 → Q40
-(a throwaway list becomes a memory exam, then a pointed self-assessment where
-one word — "actually" — appears only for those who failed).
+Built: patience-claim → PatienceLens (you *said* you were patient; every
+following question in the chapter is now delivered at the speed you claimed to
+want, and the finale hands you a five-second or thirty-minute countdown to
+match), memory-claim → recall-trap (claim a good memory in chapter 3 and, a
+chapter later, you are asked for that question's *exact wording* against four
+near-misses — but only if you claimed it in the strongest terms), honesty-claim
+→ found-wallet, detail-claim → the two illusions.
 
-**How PatienceLens scales time** (`src/lib/PatienceLens.svelte`). It cannot
-read the question it wraps — questions are arbitrary components with no shared
-text or option schema — so it works on the *animations* instead. Every
+**Only endpoints arm a consequence.** A 2 or a 6 on a 1–7 slider is a
+preference; a 1 or a 7 is a claim, and the quiz only ever bills people for
+claims they failed to keep. Widening this puts the punishment in front of people
+who never asserted anything.
+
+**How PatienceLens scales time** (`src/lib/PatienceLens.svelte`). Shared
+controls publish authored text and choice labels in their rendered markup, so
+the impatient path can read arbitrary questions without replacing their real
+controls. The patient path works on the *animations*. Every
 pre-answer animation in this app is CSS, so `host.getAnimations({subtree:
 true})` returns all of them (transitions included) and setting each one's
-`playbackRate` scales its whole timing, delays and staggers alike. Claim 6–7
-and the band runs at **×0.05 — about 20 seconds for a question that normally
+`playbackRate` scales its whole timing, delays and staggers alike. Claim 7
+and the chapter runs at **×0.05 — about 20 seconds for a question that normally
 arrives in ~1.25s** — with pointer events off until it finishes, because
 elements fading in from `opacity: 0` are otherwise invisible but clickable.
-Claim 1–2 and you still get the blur flash. The № marker lives *inside* the
-lens in `+page.svelte` precisely so it is governed too.
+Claim 1 speed-reads all authored prose and choices at 1,500 wpm, keeps visual
+cues and controls visible, replaces option labels with the corresponding reader
+numbers, and unlocks interaction only when the reader ends. That mode persists
+through the report, but interludes always render normally as breathing room;
+the escape hatch is offered only in the original patience chapter. The № marker lives *inside* the lens in
+`+page.svelte` precisely so it is governed too.
 
 Three things to preserve if you touch it: grip the animations **on mount, not
 on `animationstart`** (a CSS animation is returned during its delay phase, so
@@ -65,7 +77,7 @@ open when `getAnimations` is missing, or the taker is stranded on a question
 they can never answer.
 
 JS-driven timing (`tweened`, `setTimeout`) is deliberately **not** scaled. In
-this band every such timer fires only after an answer is given, and once you
+this chapter every such timer fires only after an answer is given, and once you
 have answered the patience test is over. A future question that animates
 something in JS *before* the answer would escape the governor — the fix would
 be for it to consult the rate, not for the lens to chase it.
@@ -76,7 +88,7 @@ Real quizzes are radio buttons. Here, answering should regularly *be an act*:
 drag, pack, tune, rank, permit, wait. New input modes are a feature in
 themselves (see the input-mode backlog in memory).
 
-Built: Q26 (inventory-Tetris backpack), Q28 (drag planets on orbits), Q21
+Built: pack-box (inventory-Tetris moving box), Q28 (drag planets on orbits), Q21
 (iMessage QuickType), Q46 (equalizer faders), Q25 (alphabet range sliders),
 Q32 (balance scale), Q15 (budget builder), Q34/Q35 (drag-to-rank), Q23 (the
 browser permission dialog *is* the input).
@@ -86,8 +98,9 @@ browser permission dialog *is* the input).
 Take a question every personality quiz asks and turn the dial until it breaks:
 longer ladders, pettier stakes, the logic followed all the way down.
 
-Built: Q5 (income ladder into absurdity), Q6 (dinner budget ladder), Q37 (the
-where-would-you-live question as a pure density gradient), Q16–Q19 → Q20 (the
+Built: perfect-dinner (one $100 budget, every line tiered to the full $100 so
+blowing it all on a chartered yacht with nothing to eat is a legal answer),
+font/palette/button/wallpaper-taste → artistic-claim (the
 "which font are you" trope, except your taste choices are *applied* to a later
 question so you must live in the room you decorated).
 
@@ -113,7 +126,7 @@ Conventions for hardballs:
 Every question assembles in a readable order rather than fading in as one
 block. `src/lib/reveal.js` owns the timing; `SplitText` reveals text **word by
 word** (it used to be per letter, which turned prompts into a slow ransom note
-at the patience band's 1/20th speed).
+at the patience chapter's 1/20th speed).
 
 Build a question's timing with `cascade()` — each call returns the delay that
 block should start at, and advances the clock:
@@ -162,15 +175,18 @@ parentheses. Mark items built as they land. (Concept ids C1/C2/C5 are retired
 — see *Rejected concepts* below — and are not reused, so old references stay
 unambiguous.)
 
-### Shared infrastructure: the ledger
+### Shared infrastructure: answer runtime (built)
 
-C3 and C4 both want a small **answers-log state module** —
-`ledger.svelte.js`, recording per answered question: id, the label of what
-was picked, and elapsed answer time (`performance.now()` delta — **specified
-here but not yet implemented; see C12** for the plan and its pitfalls). Same
-`$state` pattern as `recallState`; consumers must handle the
-empty/deep-linked case. Build it with the first C3/C4 question and every
-later doubt/behavior question gets cheaper.
+`QuestionRuntime.svelte`, `SubmitAnswer.svelte`, and `metrics.svelte.js` form
+one session-local answer system. Manual controls publish typed drafts and never
+advance on the first selection; a separate Submit action commits them. Each
+attempt records presentation readiness, first interaction, semantic draft
+changes, revisions, submit and validation attempts, focus dwell, input
+modality, hidden-tab time, and the final response. Automatic browser and timed
+scenes use the same record with explicit outcome formats. Cross-question checks
+read submitted responses through `latestResponse()` and tolerate a missing
+deep-linked answer. Development builds expose cloned snapshots at
+`window.__quizMetrics`; nothing is persisted or transmitted.
 
 ### C3 — Measuring behavior, not answers
 
@@ -288,7 +304,7 @@ More trolley-grade questions in softball costume.
 
 A two-question set, and the third instance of the quiz's strongest recurring
 device: **make a claim cheap, then charge for it.** (The other two are live:
-q48 honesty claim → q49 wallet, and q51 challenge claim → q52 math test. Worth
+honesty-claim honesty claim → found-wallet wallet, and easy-or-hard challenge claim → math-test math test. Worth
 treating as a named pattern rather than reinventing it each time.)
 
 1. *"Hypothetically, how much would you donate to the creator of this quiz?"*
@@ -325,7 +341,7 @@ pay stops being a joke about donation asks and becomes one.
 
 ### C11 — Paying off the location permission
 
-**q23 already requests real geolocation and then throws the coordinates away
+**location-permission already requests real geolocation and then throws the coordinates away
 unread** (`Q23Permission.svelte`: "The position itself is discarded unread —
 only the allow/deny choice matters"). Keeping the fix instead, for one later
 question, is a payoff sitting right there.
@@ -339,7 +355,7 @@ call — which matters, because this must stay a local-only trick:
 
 - **Distance to something absurd,** by haversine against a hardcoded point.
   *"You are 6,281 km from the nearest active volcano. Does that feel like
-  enough?"* A distance to D. B. Cooper's drop zone would call back to q32.
+  enough?"* A distance to D. B. Cooper's drop zone would call back to balance-scale.
 - **A scale question re-expressed in their own geography.** *"How far would
   you travel for a genuinely perfect meal?"* — with the slider labelled in
   real distances from where they actually are.
@@ -359,36 +375,30 @@ Constraints for whoever builds it:
   lie the quiz can't back up; better that denial simply gets the plain
   version.
 
-### C12 — Time as evidence (score the clock, not just the answer)
+### C12 — Time as evidence (built)
 
-**Time every question and let it move the final score.** The ledger section
-above specifies an elapsed-time field, but nothing records one today — the
-live entry shape is `{ index?, value?, label? }` and no question or orchestrator
-writes a duration. This is the plan for actually doing it.
+Every question is timed by the shared runtime. The time audit consumes decision
+time after presentation readiness, subtracts hidden-tab time, and excludes
+timed scenes plus patience-altered delivery. The decision audit uses semantic
+draft revisions from the same records.
 
 It is the purest form of P2: a personality quiz that only reads your answers is
 taking your word for it. How long you took is the one signal you cannot
 consciously curate, and it is free — we just have to look.
 
-**Measure in the orchestrator, not in questions.** `+page.svelte` is the only
-place that knows when a question appeared and when it answered; putting a timer
-in each question means implementing it 54 times and forgetting it on the 55th.
-Stamp on question mount, diff in `handleAnswer`, write to the ledger.
+**Measure in the runtime, not in questions.** `QuestionRuntime` owns the
+question lifetime and `handleAnswer` closes the current attempt, so new formats
+inherit measurement without another timer.
 
 Five things that will corrupt the number if not handled:
 
-- **The animate-then-advance tax.** Every question deliberately waits before
-  calling `onAnswer` — 520ms in PickList, 900ms in Q28/Q32, 2600ms in Q22. A
-  raw mount→answer delta measures our animation as much as their thinking.
-  Either subtract a per-question constant (fragile) or time to *first
-  interaction* — which is what `onPick` already is, though it only exists on
-  PickList/ButtonPick/PalettePick, not on sliders or drag questions. Extending
-  a "first touch" signal to the shared input helpers is the cleaner fix.
-- **PatienceLens.** It scales a whole band's animations to ×0.05 — about 20
-  seconds before a question is even readable. Timing inside that band measures
-  the lens, not the person. Exclude the band, or subtract arrival time.
-- **Tab-away.** Someone who makes a coffee mid-question must not read as deep
-  deliberation. Cap per-question time, or pause on `visibilitychange`.
+- **The animate-then-advance tax.** Submit time is captured before a component's
+  delayed transition and before it can unmount, so post-answer animation never
+  inflates decision time.
+- **PatienceLens.** It scales a whole chapter's animations to ×0.05 — about 20
+  seconds before a question is even readable. Timing inside that chapter measures
+  the lens, not the person. Exclude the chapter, or subtract arrival time.
+- **Tab-away.** `visibilitychange` pauses the measured decision clock.
 - **Questions are not comparable.** Q52's calculus, a four-option pick, and
   Q47's reaction test have wildly different honest durations, and a longer
   `.premise` legitimately takes longer to read. A raw average across questions
@@ -405,13 +415,40 @@ noise. `scope` is a plausible secondary (deliberation reads as detail-oriented).
 **The best use is the contradiction.** Q29 asks the taker to rate their own
 patience. The measured time is evidence about the same trait, gathered without
 asking. When the claim and the clock disagree, that's an honesty hit — the same
-shape as q48→q49 and q51→q52, except derived from behavior rather than from a
+shape as honesty-claim→found-wallet and easy-or-hard→math-test, except derived from behavior rather than from a
 second question. That is the version worth building first.
 
 Deep-links and replays leave gaps; a missing duration is skipped, never guessed
-(the standing ledger contract). And the results page can state the finding with
+(the standing metrics contract). And the results page can state the finding with
 meaningless precision — *"You averaged 8.3 seconds per question."* — for a free
 C8 crossover.
+
+## Removed questions
+
+Questions that shipped and were later cut. **Log every removal here with its
+reason** — the point is that a cut question stays cut. Without a record, a
+question that failed for a structural reason gets cheerfully reinvented six
+weeks later, because the idea still sounds fine in isolation; what killed it
+was never the idea.
+
+Ids are never reused (see the note on `flowOrder` in
+`src/lib/questions/index.js`).
+
+| Question | Why it was cut |
+| --- | --- |
+| `ideal-residence` — submarine / blimp / space station | Cut during the chapter-3/4 pass. **Reason not recorded — fill this in.** Note it was the anchor for the "Thank you for your patience." interlude, which had to be re-pinned to `coffee-prompt`; that interlude bounds the patience lens, so it must always follow the LAST question of chapter 3. |
+| `flooded-building` — fifty floors underwater, how do you get groceries | Cut during the chapter-4 pass. **Reason not recorded — fill this in.** |
+| `dinner-budget` — Friday-night budget ladder | Too generic. It belongs in chapter 1 if anywhere, and chapter 1 is already full. Chapter 2 is reserved for questions with a **visual** element, which this had none of. |
+| `picnic-fridge` — which fridge item to grab | Collateral of moving `memory-claim` to slot 1. Its only job was planting four items for `recall-trap`, and `recall-trap` now tests the exact wording of question 1 instead, so the plant had nothing left to do. |
+| `ideal-income` | Everyone answers the maximum. A question where the entire population picks one option discriminates nothing, whatever it costs to render. |
+| The 100-storey apartment question | Same failure as `ideal-income` — everyone picks the top floor. |
+| The absurd reprises (three questions parodying earlier ones, e.g. "delay your gut") | Not funny enough to earn their slots, and redundant with the questions they were reprising. |
+| "How likely are you to stop and help?" | Cut during the chapter-1 walkthrough. |
+| Three early chapter-1 questions (originally Q4, Q5, Q8) | Cut during the chapter-1 walkthrough as weak; no specific reason recorded at the time. |
+
+Note the recurring pattern in the top four: **a question that everyone answers
+the same way is dead weight.** Before adding a question with an obvious
+maximal answer, work out what stops people from simply picking it.
 
 ## Rejected concepts
 
@@ -424,10 +461,15 @@ Considered and deliberately not pursued — don't re-propose these:
 - **The Barnum / Forer trap** (was C2: the flattering profile that fits
   everyone). Rejected as overused — it's the most-cited fact about
   personality quizzes, so replaying it reads as cliché rather than parody.
-- **Terms & conditions bureaucracy** (was C5: the unread-T&C gag). Rejected
-  — "nobody reads the terms" is a worn-out internet joke. (The *initials
-  box* input mode from this idea is still fair game if a question ever needs
-  a signature; it's the T&C framing that's retired.)
+- ~~**Terms & conditions bureaucracy**~~ (was C5). Originally rejected —
+  "nobody reads the terms" is a worn-out internet joke. **Revived as
+  `terms-consent`, question 2**, on a narrower premise: the gag is not that
+  the terms are long, it's clause 5.4, which asks for a dollar in the same
+  flat voice as the indemnity clause either side of it. The scroll gate is
+  the actual target — being *made* to scroll past something is treated by
+  the whole industry as having been informed of it. Keep the document
+  unstyled and the clause unemphasised; the moment anything winks, it
+  collapses back into the joke that was rejected.
 
 ## Scoring (v1, live)
 
@@ -447,12 +489,12 @@ Conventions when scoring a new question:
   people, coord is method of getting things done.** Keep them distinct.
 - `honesty` moves on evidence: cross-question checks, cheating options,
   candid confessions (±1 flavor only).
-- Cross-question checks so far: patience claim → lens band survival
+- Cross-question checks so far: patience claim → lens chapter survival
   (+page.svelte, ±4), taste picks → Q20 artistic claim, Q39 recall → Q40
   memory claim, Q48 honesty claim → Q49 wallet (double-lie −3), Q1/2/4 pick
-  index → Q41–43 reprise consistency (±1). Shared answers log:
-  `src/lib/questions/ledger.svelte.js` — write via `logAnswer`, readers must
-  handle missing entries.
+  index → Q41–43 reprise consistency (±1). Submitted answers and behavior live
+  in `src/lib/questions/metrics.svelte.js`; readers use `latestResponse()` and
+  must handle missing entries.
 - **The 128 types (live)** — `src/lib/personalities.js`. Threshold: value ≥ 0
   → positive pole. Each type has a 7-letter code in AXES order (E/I · H/D ·
   C/P · B/W · G/F · Q/S · T/L — no letter pair repeats), a compositional
@@ -502,7 +544,7 @@ terms are never engaged. If you ever bake in a crop or filter, that changes.
 
 Two older images predate this rule and have no recorded provenance:
 `static/sailing-lantern.jpg` (a vendor product shot) and
-`static/images/q47-signs/run-v2.png`. Worth resolving before any public
+`static/images/elevator-doors-signs/run-v2.png`. Worth resolving before any public
 deployment.
 - **The live meter** (`src/lib/TemperamentHud.svelte`): all seven axes as a
   compact strip of read-only faders fixed to the bottom of the viewport
@@ -529,9 +571,9 @@ deployment.
   (`src/lib/questions/index.js`): normal content/simple inputs → mild oddity
   and richer widgets → mechanism gotchas and absurd content → full joke,
   payoffs and finale. Interludes (`src/lib/interludes.js`, pinned to question
-  ids) mark the band boundaries and double as functional bounds (patience
-  lens, q53 seep). Build-up questions (q48 honest, q34 tame rank) sit far
-  ahead of their payoffs so the pairing never telegraphs — except q51 → q52
+  ids) mark the chapter boundaries and double as functional bounds (patience
+  lens; the hide-brush paint is permanent instead). Build-up questions (honesty-claim honest, rank-satisfying tame rank) sit far
+  ahead of their payoffs so the pairing never telegraphs — except easy-or-hard → math-test
   (challenge claim → sized math test), deliberately adjacent so the karma is
   instant; ids are permanent (id = filename number = ledger key), № is
   positional.

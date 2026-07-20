@@ -12,20 +12,11 @@
 	import { PALETTES, readableOn } from '$lib/design/palettes.js';
 	import { BUTTON_VARIANTS } from '$lib/design/buttons.js';
 	import { choices } from '$lib/design/choices.svelte.js';
-	import SplitText from '$lib/SplitText.svelte';
-	import { cascade, ITEM_MS } from '$lib/reveal.js';
+	import LikertPick, { LIKERT } from './LikertPick.svelte';
 	import EmojiFloat from './EmojiFloat.svelte';
 	let { onAnswer } = $props();
 
-	// This file had no entry animations at all; the Likert row now arrives
-	// after the prompt like every other question.
-	const seq = $derived.by(() => {
-		const c = cascade();
-		return { prompt: c.text(prompt), buttons: c.items(LIKERT.length) };
-	});
-
 	const prompt = 'I consider myself to have an artistic side.';
-	const LIKERT = ['Strongly disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly agree'];
 
 	const WALLPAPERS = [
 		{ id: 'plain', label: 'Plain background' },
@@ -116,9 +107,6 @@
 		return () => host.remove();
 	});
 
-	/** @type {number | null} */
-	let picked = $state(null);
-
 	// The options everyone with taste agrees are bad: Comic Sans, the clashing
 	// palettes (neon included), the flying-emoji wallpaper. Used only for the
 	// honesty cross-check below — the taker is free to love them.
@@ -127,8 +115,7 @@
 	const BAD_WALLPAPERS = new Set(['crazy']);
 
 	/** @param {number} i */
-	function choose(i) {
-		picked = i;
+	function toScore(i) {
 		// Base: the claim itself. Creative scales with agreement.
 		/** @type {Record<string, number>} */
 		const delta = { creative: [-3, -1, 0, 2, 3][i] };
@@ -145,7 +132,7 @@
 			else if (i >= 3 && T === 0) delta.honesty = 2; // claim consistent with evidence
 			else if (i <= 1 && T >= 2) delta.honesty = 2; // knows exactly what they are
 		}
-		setTimeout(() => onAnswer(delta), 340);
+		return delta;
 	}
 </script>
 
@@ -156,23 +143,23 @@
 {/if}
 
 <div
-	class="q20"
-	style="--q-bg:{roles.bg}; --q-text:{roles.text}; --q-accent:{roles.accent}; --q-btn-text:{btnText}; --q-font:{font.css};"
+	class="artistic-claim"
+	style="--q-bg:{roles.bg}; --q-text:{roles.text}; --q-accent:{roles.accent}; --q-btn-text:{btnText}; --q-font:{font.css};
+	       --likert-font:{font.css}; --likert-weight:600; --likert-bg:{roles.accent}; --likert-color:{btnText};
+	       --likert-outline:{roles.text}; --likert-dim:0.4;
+	       --likert-hover-border:transparent; --likert-picked-border:transparent; --likert-picked-bg:{roles.accent};"
 >
-	<h2><SplitText text={prompt} delay={seq.prompt} /></h2>
-	<div class="likert">
-		{#each LIKERT as label, i}
-			<button
-				class="btn {variant}"
-				style="animation-delay: {seq.buttons + i * ITEM_MS}ms"
-				class:dim={picked !== null && picked !== i}
-				disabled={picked !== null}
-				onclick={() => choose(i)}
-			>
-				{label}
-			</button>
-		{/each}
-	</div>
+	<!-- Same LikertPick, same grid, same stagger as memory-claim and
+	     terms-consent — only the paint differs, which is the entire point of the
+	     question. `picked`/`dim` feedback is inverted here via --likert-dim: the
+	     chosen answer holds its colour and the others fade, because a "selected"
+	     highlight would fight whatever palette the taker chose. -->
+	<LikertPick
+		{prompt}
+		{toScore}
+		{onAnswer}
+		chipVariant={variant}
+	/>
 </div>
 
 {#if import.meta.env.DEV}
@@ -218,7 +205,7 @@
 		z-index: 0;
 		pointer-events: none;
 	}
-	.q20 {
+	.artistic-claim {
 		/* The paper frame itself carries the palette background + wallpaper (see
 		   $effect); this block stays transparent so the card reads as one surface. */
 		position: relative;
@@ -229,73 +216,19 @@
 		padding: 1rem 0;
 		transition: color 0.25s ease;
 	}
-	.q20 h2 {
+	/* The prompt is LikertPick's <h2> now, so reach it with :global — otherwise
+	   the heading silently falls back to the app serif and the question stops
+	   being rendered in the face the taker chose, which is half the payoff.
+	   Everything except the font is left at LikertPick's values so the heading
+	   sits identically to the other two questions. */
+	.artistic-claim :global(h2) {
 		position: relative;
 		z-index: 1;
-		margin: 0 0 2rem;
-		font-size: 1.85rem;
-		line-height: 1.25;
 		font-family: var(--q-font);
 	}
-	.likert {
-		position: relative;
-		z-index: 1;
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.85rem;
-	}
-
-	/* The "go crazy" wallpaper is rendered by the shared EmojiFloat overlay. */
-
-	.btn {
-		animation: rise 0.42s both;
-		font-family: var(--q-font);
-		font-weight: 600;
-		font-size: 1rem;
-		padding: 0.8rem 1.4rem;
-		background: var(--q-accent);
-		color: var(--q-btn-text);
-		cursor: pointer;
-		transition:
-			transform 0.12s ease,
-			opacity 0.2s ease;
-	}
-	.btn:not(:disabled):hover {
-		transform: translateY(-2px);
-	}
-	.btn.dim {
-		opacity: 0.4;
-	}
-	.btn:disabled {
-		cursor: default;
-	}
-
-	/* Variants mirror Q18, but colored by the chosen palette instead of app tokens. */
-	.btn.simple {
-		border: none;
-		border-radius: 8px;
-	}
-	.btn.shadow {
-		border: none;
-		border-radius: 6px;
-		box-shadow:
-			0 3px 6px rgba(0, 0, 0, 0.16),
-			0 1px 3px rgba(0, 0, 0, 0.12);
-	}
-	.btn.bold {
-		border: 3px solid var(--q-text);
-		border-radius: 6px;
-		box-shadow: 5px 5px 0 0 var(--q-text);
-	}
-	.btn.bold:not(:disabled):hover {
-		transform: translate(2px, 2px);
-		box-shadow: 3px 3px 0 0 var(--q-text);
-	}
-	.btn.bubbly {
-		border: 1px solid var(--q-text);
-		border-radius: 999px;
-		padding: 0.8rem 1.7rem;
-	}
+	/* The Likert row itself is LikertPick's — layout, sizing and stagger are
+	   shared verbatim with memory-claim and terms-consent. Only the --likert-*
+	   values set on .artistic-claim above differ. */
 
 	/* Debug sidebar — intentionally un-themed so it stays readable over any palette. */
 	.debug {

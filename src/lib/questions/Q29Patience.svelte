@@ -21,7 +21,7 @@
 		patience.bailed = false;
 		// tempo: claiming impatience = quick-action, patience = long-and-steady.
 		// The claim itself is cheap — the big honesty/tempo points land at the end
-		// of the lens band, where the claim gets tested (+page.svelte).
+		// of the lens chapter, where the claim gets tested (+page.svelte).
 		return { tempo: Math.max(-3, Math.min(3, 4 - value)) };
 	}
 </script>

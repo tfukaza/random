@@ -10,6 +10,8 @@
 	import SplitText from '$lib/SplitText.svelte';
 	import { cascade } from '$lib/reveal.js';
 	import { playSfx } from '$lib/audio/audio.svelte.js';
+	import { recordDraft } from '$lib/questions/metrics.svelte.js';
+	import SubmitAnswer from './SubmitAnswer.svelte';
 
 	let {
 		prompt,
@@ -57,6 +59,7 @@
 	let lastDetent = 0;
 	/** @type {HTMLElement | null} */
 	let trackEl = $state(null);
+	let committed = $state(false);
 
 	const pct = (/** @type {number} */ i) => (i / last) * 100;
 	const count = $derived(high - low + 1);
@@ -83,6 +86,7 @@
 		if (n === low) return;
 		low = n;
 		detent();
+		recordDraft({ format: 'range', value: { low, high }, labels: [labels[low], labels[high]] });
 	}
 	/** @param {number} v */
 	function setHigh(v) {
@@ -91,6 +95,7 @@
 		if (n === high) return;
 		high = n;
 		detent();
+		recordDraft({ format: 'range', value: { low, high }, labels: [labels[low], labels[high]] });
 	}
 
 	function detent() {
@@ -147,6 +152,9 @@
 	}
 
 	function commit() {
+		if (committed) return;
+		committed = true;
+		recordDraft({ format: 'range', value: { low, high }, labels: [labels[low], labels[high]] });
 		onAnswer(toScore(low, high));
 	}
 </script>
@@ -164,8 +172,8 @@
 	<hr class="rule" style="animation-delay: {seq.rule}ms" />
 
 	<div class="ends" style="animation-delay: {seq.ends}ms">
-		<span>{labels[0]}</span>
-		<span>{labels[last]}</span>
+		<span data-reader-option={labels[0]}><span data-reader-label>{labels[0]}</span></span>
+		<span data-reader-option={labels[last]}><span data-reader-label>{labels[last]}</span></span>
 	</div>
 
 	<div class="dual">
@@ -214,7 +222,7 @@
 		<span class="count">({count} of {labels.length})</span>
 	</p>
 
-	<button class="next" onclick={commit} style="animation-delay: {seq.next}ms">{shownNext} →</button>
+	<SubmitAnswer {committed} delay={seq.next} label="{shownNext} →" onsubmit={commit} />
 </div>
 
 <style>
@@ -303,22 +311,5 @@
 	.readout .count {
 		color: var(--muted);
 		margin-left: 0.35rem;
-	}
-	.next {
-		animation: rise 0.42s both;
-		display: block;
-		margin-left: auto;
-		padding: 0.75rem 1.5rem;
-		background: var(--ink);
-		color: var(--surface);
-		border: none;
-		border-radius: var(--radius);
-		font: inherit;
-		font-weight: 600;
-		cursor: pointer;
-		transition: filter 0.12s ease;
-	}
-	.next:hover {
-		filter: brightness(1.08);
 	}
 </style>

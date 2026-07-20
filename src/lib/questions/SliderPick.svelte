@@ -4,6 +4,8 @@
 	// function that maps the final value to a score delta.
 	import SplitText from '$lib/SplitText.svelte';
 	import { cascade } from '$lib/reveal.js';
+	import { recordDraft } from '$lib/questions/metrics.svelte.js';
+	import SubmitAnswer from './SubmitAnswer.svelte';
 
 	// `premise` is optional scene-setting shown above the prompt — used by lore
 	// arc questions (see docs/lore.md); plain questions just omit it.
@@ -43,7 +45,18 @@
 	// svelte-ignore state_referenced_locally
 	let value = $state(Math.round((min + max) / 2));
 
+	let touched = $state(false);
+	let committed = $state(false);
+	/** @param {Event} e */
+	function onSlide(e) {
+		const next = Number(/** @type {HTMLInputElement} */ (e.currentTarget).value);
+		touched = true;
+		recordDraft({ format: 'scalar', value: next, label: format(next) });
+	}
+
 	function commit() {
+		if (!touched || committed) return;
+		committed = true;
 		onAnswer(toScore(value));
 	}
 
@@ -77,8 +90,8 @@
 	{/if}
 
 	<div class="poles" style="animation-delay: {seq.poles}ms">
-		<span class="pole">{leftLabel}</span>
-		<span class="pole">{rightLabel}</span>
+		<span class="pole" data-reader-option={leftLabel}><span data-reader-label>{leftLabel}</span></span>
+		<span class="pole" data-reader-option={rightLabel}><span data-reader-label>{rightLabel}</span></span>
 	</div>
 
 	<input
@@ -88,11 +101,13 @@
 		{max}
 		{step}
 		bind:value
+		data-answer-id="value"
+		oninput={onSlide}
 		style="animation-delay: {seq.slider}ms"
 	/>
 	<p class="readout" style="animation-delay: {seq.readout}ms">{format(value)}</p>
 
-	<button class="next" onclick={commit} style="animation-delay: {seq.next}ms">Next →</button>
+	<SubmitAnswer disabled={!touched} {committed} delay={seq.next} onsubmit={commit} />
 </div>
 
 <style>
@@ -139,22 +154,5 @@
 		font-variant-numeric: tabular-nums;
 		margin: 0.75rem 0 2rem;
 		animation: rise 0.42s both;
-	}
-	.next {
-		display: block;
-		margin-left: auto;
-		padding: 0.75rem 1.5rem;
-		background: var(--ink);
-		color: var(--bg);
-		border: none;
-		border-radius: var(--radius);
-		font: inherit;
-		font-weight: 600;
-		cursor: pointer;
-		animation: rise 0.42s both;
-		transition: background 0.25s ease;
-	}
-	.next:hover {
-		background: #0f0f0f;
 	}
 </style>

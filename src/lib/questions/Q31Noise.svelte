@@ -10,12 +10,14 @@
 	import { makeNoise2D, fbm } from '$lib/perlin';
 	import SplitText from '$lib/SplitText.svelte';
 	import { cascade, ITEM_MS } from '$lib/reveal.js';
+	import SubmitAnswer from './SubmitAnswer.svelte';
+	import { recordDraft } from '$lib/questions/metrics.svelte.js';
 
 	let { onAnswer } = $props();
 
 	const seq = $derived.by(() => {
 		const c = cascade();
-		return { prompt: c.text(prompt), rule: c.rule(), plate: c.block(), cards: c.items(options.length) };
+		return { prompt: c.text(prompt), rule: c.rule(), plate: c.block(), cards: c.items(options.length), submit: c.action() };
 	});
 
 	const prompt = 'What do you see in here?';
@@ -45,6 +47,7 @@
 
 	/** @type {number | null} */
 	let picked = $state(null);
+	let committed = $state(false);
 
 	function paint() {
 		if (!canvas) return;
@@ -84,8 +87,16 @@
 
 	/** @param {number} i */
 	function choose(i) {
+		if (committed) return;
 		picked = i;
-		setTimeout(() => onAnswer(options[i].score), 520);
+		recordDraft({ format: 'single-choice', value: i, label: options[i].label });
+	}
+
+	function submit() {
+		const choice = picked;
+		if (choice === null || committed) return;
+		committed = true;
+		setTimeout(() => onAnswer(options[choice].score), 520);
 	}
 </script>
 
@@ -102,15 +113,19 @@
 		{#each options as opt, i}
 			<button
 				class="card"
+				data-reader-option={opt.label}
+				data-answer-id={i}
+				aria-pressed={picked === i}
 				class:picked={picked === i}
 				style="animation-delay: {seq.cards + i * ITEM_MS}ms"
-				disabled={picked !== null}
+				disabled={committed}
 				onclick={() => choose(i)}
 			>
-				{opt.label}
+				<span data-reader-label>{opt.label}</span>
 			</button>
 		{/each}
 	</div>
+	<SubmitAnswer disabled={picked === null} {committed} delay={seq.submit} onsubmit={submit} />
 </div>
 
 <style>
