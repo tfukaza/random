@@ -4,12 +4,12 @@
 // after Q29 is delivered, until the next interlude clears the air:
 //
 //   - `PatienceLens.svelte`, applied by the orchestrator to each question in that
-//     band. It's content-agnostic (it can't know what any given question says), so
+//     chapter. It's content-agnostic (it can't know what any given question says), so
 //     it works at the presentation layer: a blur-out flash for the impatient, a
 //     slow downward wipe for the patient.
 //
 // A consumer must handle `value === null` (deep-linked straight past Q29, or a
-// fresh load) the same way Q27Survivor handles an empty backpack.
+// fresh load) the same way airport-discard handles an empty box.
 export const patience = $state({
 	/** @type {number | null} 1 = very impatient … 7 = very patient */
 	value: null,
@@ -35,8 +35,11 @@ export function patienceMode() {
 	if (patience.bailed) return 'normal';
 	const v = patience.value;
 	if (typeof v !== 'number') return 'normal';
-	if (v <= 2) return 'fast';
-	if (v >= 6) return 'slow';
+	// ONLY the endpoints. A 2 or a 6 is a preference; a 1 or a 7 is a claim,
+	// and the lens exists to test claims. Widening this again would put the
+	// treatment in front of people who never really asserted anything.
+	if (v === 1) return 'fast';
+	if (v === 7) return 'slow';
 	return 'normal';
 }
 

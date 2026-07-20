@@ -1,24 +1,80 @@
 <script>
-	import { audioState, playSfx, setAudioEnabled } from './audio.svelte.js';
+	import { audio, audioState } from './audio.svelte.js';
+
+	const needsRestore = $derived(
+		audioState.enabled &&
+			audioState.started &&
+			(['locked', 'interrupted', 'recoverable'].includes(audioState.status) ||
+				(audioState.status === 'error' && audioState.errorCategory === 'context-recovery'))
+	);
+	const needsRetry = $derived(
+		audioState.enabled &&
+			audioState.started &&
+			audioState.status === 'error' &&
+			audioState.errorCategory !== 'context-recovery'
+	);
+	const needsAction = $derived(needsRestore || needsRetry);
+	const label = $derived(
+		needsRestore
+			? 'Restore sound'
+			: needsRetry
+				? 'Retry sound'
+				: audioState.enabled
+					? 'Sound on'
+					: 'Sound off'
+	);
+	const accessibleLabel = $derived(
+		needsRestore
+			? 'Tap to restore quiz sound'
+			: needsRetry
+				? 'Retry unavailable quiz sound'
+			: audioState.enabled
+				? 'Mute quiz sound'
+				: 'Turn on quiz sound'
+	);
+	let gestureWasRestore = false;
+
+	function rememberPointerAction() {
+		gestureWasRestore = needsAction;
+	}
+
+	/** @param {KeyboardEvent} event */
+	function rememberKeyboardAction(event) {
+		if (event.key === 'Enter' || event.key === ' ') gestureWasRestore = needsAction;
+	}
 
 	function toggle() {
+		const restoring = gestureWasRestore || needsAction;
+		gestureWasRestore = false;
+		if (restoring) {
+			void audio.recoverFromGesture().then((outcome) => {
+				if (outcome === 'playing' || outcome === 'silent') audio.sfx.play('ui-toggle');
+			});
+			return;
+		}
 		const enabled = !audioState.enabled;
-		setAudioEnabled(enabled);
-		if (enabled) void playSfx('ui-toggle');
+		audio.setEnabled(enabled);
+		if (enabled) {
+			void audio.activateFromGesture();
+			audio.sfx.play('ui-toggle');
+		}
 	}
 </script>
 
 <button
 	class="sound-control"
+	class:needs-restore={needsAction}
 	type="button"
 	data-sfx="none"
 	aria-pressed={audioState.enabled}
-	aria-label={audioState.enabled ? 'Mute quiz sound' : 'Turn on quiz sound'}
-	title={audioState.enabled ? 'Sound on' : 'Sound off'}
+	aria-label={accessibleLabel}
+	title={label}
+	onpointerdown={rememberPointerAction}
+	onkeydown={rememberKeyboardAction}
 	onclick={toggle}
 >
 	<span class="icon" class:muted={!audioState.enabled} aria-hidden="true">♪</span>
-	<span>{audioState.enabled ? 'Sound on' : 'Sound off'}</span>
+	<span>{label}</span>
 </button>
 
 <style>
@@ -42,9 +98,13 @@
 		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 	}
 	.sound-control:hover,
-	.sound-control:focus-visible {
+	.sound-control:focus-visible,
+	.sound-control.needs-restore {
 		color: var(--ink);
 		border-color: var(--ink);
+	}
+	.sound-control.needs-restore {
+		box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px var(--ink);
 	}
 	.icon {
 		position: relative;

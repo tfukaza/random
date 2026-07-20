@@ -7,7 +7,6 @@
 	// life and you get arithmetic; say you love a challenge and you get a second
 	// derivative. Keep these two adjacent in index.js.
 	import SliderPick from './SliderPick.svelte';
-	import { logAnswer } from './ledger.svelte.js';
 
 	let { onAnswer } = $props();
 
@@ -15,7 +14,6 @@
 
 	/** @param {number} value */
 	function toScore(value) {
-		logAnswer('q51', { value });
 		// The claim is cheap; Q52 is where it costs something.
 		return { risk: Math.round((value - 4) / 2) };
 	}

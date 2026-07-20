@@ -1,535 +1,346 @@
-import { Howl, Howler } from 'howler';
-import {
-	glidingMusicRate,
-	musicVolume,
-	normalizeMusicRate,
-	normalizeSfxRate,
-	normalizeSfxVolume
-} from './mix.js';
-import {
-	needsIosHtml5Audio,
-	preserveHowlsDuringMobileUnlock,
-	primeIosHtml5Music
-} from './howler-compat.js';
-
-const MUSIC = {
-	default: { path: '/audio/music/puzzle-chamber-loop.mp3', loop: true, rateSensitive: true },
-	asteroid: { path: '/audio/music/asteroid-countdown.mp3', loop: false, rateSensitive: false },
-	report: { path: '/audio/music/final-report-loop.mp3', loop: true, rateSensitive: false }
-};
-
-const SFX = {
-	'ui-tap': '/audio/sfx/ui-tap.mp3',
-	'ui-toggle': '/audio/sfx/ui-toggle.mp3',
-	'ui-confirm': '/audio/sfx/ui-confirm.mp3',
-	'slider-detent': '/audio/sfx/slider-detent.mp3',
-	'drag-pickup': '/audio/sfx/drag-pickup.mp3',
-	'drop-valid': '/audio/sfx/drop-valid.mp3',
-	'drop-invalid': '/audio/sfx/drop-invalid.mp3',
-	'page-turn': '/audio/sfx/page-turn.mp3',
-	'chat-send': '/audio/sfx/chat-send.mp3',
-	'illusion-reveal': '/audio/sfx/illusion-reveal.mp3',
-	'balance-settle': '/audio/sfx/balance-settle.mp3',
-	'elevator-button': '/audio/sfx/elevator-button.mp3',
-	'elevator-approach': '/audio/sfx/elevator-approach.mp3',
-	'elevator-open': '/audio/sfx/elevator-open.mp3',
-	'elevator-shut': '/audio/sfx/elevator-shut.mp3',
-	'asteroid-warning': '/audio/sfx/asteroid-warning.mp3',
-	'asteroid-approach': '/audio/sfx/asteroid-approach.mp3',
-	'asteroid-impact': '/audio/sfx/asteroid-impact.mp3',
-	'result-reveal': '/audio/sfx/result-reveal.mp3'
-};
+import { AudioCoordinator, musicRateMode } from './audio-engine.js';
+import { normalizeMusicRate } from './mix.js';
+import { MUSIC_ASSETS, SFX_ASSETS, WebAudioTransport } from './web-audio-transport.js';
 
 const STORAGE_KEY = 'personality-quiz-sound';
-const CORE = ['ui-tap', 'ui-toggle', 'ui-confirm', 'slider-detent', 'drag-pickup', 'drop-valid'];
-const MUSIC_FADE_MS = 140;
-const MUSIC_RATE_GLIDE_MS = 1000;
+const RESPONSIVE_SFX = new Set([
+	'ui-tap',
+	'ui-toggle',
+	'ui-confirm',
+	'slider-detent',
+	'drag-pickup',
+	'drop-valid',
+	'drop-invalid'
+]);
 
 export const audioState = $state({
 	enabled: true,
 	started: false,
 	ready: false,
 	rate: 1,
-	/** The source that is audibly running; empty while loading/switching. */
 	musicTrack: '',
-	/** A permanent load/decode failure, not an autoplay block. */
-	musicFailed: false
+	musicFailed: false,
+	/** @type {'idle' | 'locked' | 'loading' | 'playing' | 'silent' | 'interrupted' | 'recoverable' | 'error'} */
+	status: 'idle',
+	requestedTrack: '',
+	activeTrack: '',
+	cueKey: '',
+	interruptionReason: '',
+	errorCategory: '',
+	revision: 0
 });
 
-/** @type {Map<keyof typeof MUSIC, Howl>} */
-const musicHowls = new Map();
-/** @type {Map<keyof typeof SFX, Howl>} */
-const sfxHowls = new Map();
-/** @type {WeakMap<Howl, Promise<boolean>>} */
-const loadPromises = new WeakMap();
-const duckRequests = new Map();
-/** @type {Map<string, { token: object, howl: Howl, id: number }>} */
-const taggedSounds = new Map();
-/** Sound IDs stopped before a delayed mobile-unlock retry could run. */
-const canceledSoundIds = new Set();
-
-let initialized = false;
+/** @type {Array<{ at: number, event: string, detail: Record<string, unknown> }>} */
+const traceEntries = [];
 let hydrated = false;
-let preloadScheduled = false;
-let iosHtml5Audio = false;
-/** @type {keyof typeof MUSIC} */
-let desiredMusicTrack = 'default';
-/** @type {{ track: keyof typeof MUSIC, howl: Howl, id: number } | null} */
-let activeMusic = null;
-/** @type {keyof typeof MUSIC | ''} */
-let completedMusicTrack = '';
-let musicSwitchToken = 0;
-let musicRateFrame = 0;
-let htmlMusicPaused = false;
-/** @type {Set<string>} */
-const htmlTagsPaused = new Set();
+let scopeSerial = 0;
+/** @type {WebAudioTransport | null} */
+let transport = null;
+/** @type {AudioCoordinator | null} */
+let coordinator = null;
+const legacyDucks = new Map();
 
-/** @param {...unknown} args */
-function warn(...args) {
-	if (import.meta.env.DEV) console.warn(...args);
-}
-
-function ensureInitialized() {
-	if (initialized || typeof window === 'undefined') return initialized;
-	initialized = true;
-	preserveHowlsDuringMobileUnlock(Howler);
-	iosHtml5Audio = needsIosHtml5Audio(window.navigator);
-	Howler.autoUnlock = true;
-	Howler.autoSuspend = true;
-
-	for (const [track, config] of Object.entries(MUSIC)) {
-		/** @type {Howl} */
-		let howl;
-		howl = new Howl({
-			src: [config.path],
-			format: ['mp3'],
-			html5: iosHtml5Audio,
-			loop: config.loop,
-			preload: false,
-			pool: 1,
-			onplay: (id) => {
-				if (activeMusic?.howl !== howl || activeMusic.id !== id || desiredMusicTrack !== track)
-					return;
-				audioState.musicTrack = track;
-				audioState.musicFailed = false;
-				audioState.ready = true;
-			},
-			onend: (id) => {
-				if (activeMusic?.howl !== howl || activeMusic.id !== id) return;
-				activeMusic = null;
-				completedMusicTrack = /** @type {keyof typeof MUSIC} */ (track);
-				if (audioState.musicTrack === track) audioState.musicTrack = '';
-			},
-			onloaderror: (_id, error) => {
-				warn(`Audio load failed: ${config.path}`, error);
-				if (desiredMusicTrack !== track) return;
-				audioState.musicFailed = true;
-				audioState.ready = false;
-				audioState.musicTrack = '';
-			},
-			onplayerror: (id, error) => {
-				warn(`Audio playback is waiting for browser unlock: ${config.path}`, error);
-				howl.once('unlock', () => {
-					if (
-						audioState.enabled &&
-						audioState.started &&
-						desiredMusicTrack === track &&
-						activeMusic?.howl === howl &&
-						activeMusic.id === id
-					)
-						howl.play(id);
-				});
-			}
-		});
-		musicHowls.set(/** @type {keyof typeof MUSIC} */ (track), howl);
-	}
-
-	for (const [name, path] of Object.entries(SFX)) {
-		/** @type {Howl} */
-		let howl;
-		howl = new Howl({
-			src: [path],
-			format: ['mp3'],
-			html5: iosHtml5Audio,
-			preload: false,
-			pool: 8,
-			onloaderror: (_id, error) => warn(`Audio load failed: ${path}`, error),
-			onplayerror: (id, error) => {
-				warn(`Audio playback is waiting for browser unlock: ${path}`, error);
-				howl.once('unlock', () => {
-					if (!canceledSoundIds.delete(id) && audioState.enabled && audioState.started)
-						howl.play(id);
-				});
-			}
-		});
-		sfxHowls.set(/** @type {keyof typeof SFX} */ (name), howl);
-	}
-
-	void loadHowl(musicHowls.get(desiredMusicTrack));
-	for (const id of CORE) void loadHowl(sfxHowls.get(/** @type {keyof typeof SFX} */ (id)));
-	return true;
-}
-
-/** @param {Howl | undefined} howl */
-function loadHowl(howl) {
-	if (!howl) return Promise.resolve(false);
-	if (howl.state() === 'loaded') return Promise.resolve(true);
-	const existing = loadPromises.get(howl);
-	if (existing) return existing;
-	const promise = new Promise((resolve) => {
-		const done = (/** @type {boolean} */ loaded) => {
-			howl.off('load', loadedHandler);
-			howl.off('loaderror', errorHandler);
-			loadPromises.delete(howl);
-			resolve(loaded);
-		};
-		const loadedHandler = () => done(true);
-		const errorHandler = () => done(false);
-		howl.once('load', loadedHandler);
-		howl.once('loaderror', errorHandler);
-		if (howl.state() === 'unloaded') howl.load();
+/** @param {string} event @param {Record<string, unknown>} [detail] */
+function trace(event, detail = {}) {
+	traceEntries.push({
+		at: typeof performance === 'undefined' ? Date.now() : performance.now(),
+		event,
+		detail
 	});
-	loadPromises.set(howl, promise);
-	return promise;
+	if (traceEntries.length > 240) traceEntries.splice(0, traceEntries.length - 240);
 }
 
-function schedulePreload() {
-	if (preloadScheduled || typeof window === 'undefined') return;
-	preloadScheduled = true;
-	const preload = () => {
-		for (const howl of musicHowls.values()) void loadHowl(howl);
-		for (const howl of sfxHowls.values()) void loadHowl(howl);
+/** @param {Record<string, unknown>} patch */
+function applyState(patch) {
+	const next = { ...patch };
+	if ('rate' in next) {
+		const rate = next.rate;
+		next.rate =
+			rate === 'slow' ? 1 / 3 : rate === 'fast' ? 5 : rate === 'normal' ? 1 : normalizeMusicRate(Number(rate));
+	}
+	Object.assign(audioState, next);
+}
+
+function runtime() {
+	if (coordinator && transport) return { coordinator, transport };
+	const nextTransport = new WebAudioTransport({ onTrace: trace });
+	const nextCoordinator = new AudioCoordinator({
+		transport: nextTransport,
+		enabled: audioState.enabled,
+		onState: applyState,
+		onTrace: trace
+	});
+	const resumeInterrupted = () => {
+		if (audioState.status === 'interrupted' || audioState.status === 'recoverable')
+			void nextCoordinator.resume();
 	};
-	if ('requestIdleCallback' in window) window.requestIdleCallback(preload);
-	else setTimeout(preload, 500);
-}
-
-function effectiveDuck() {
-	return Math.min(1, ...duckRequests.values());
-}
-
-function selectedMusicVolume() {
-	return musicVolume(desiredMusicTrack, audioState.rate, effectiveDuck());
-}
-
-/** Start iOS media while the current user gesture is still active. */
-function primeSelectedIosMusic() {
-	if (!iosHtml5Audio || completedMusicTrack === desiredMusicTrack) return;
-	const howl = musicHowls.get(desiredMusicTrack);
-	if (!howl || howl.state() === 'loaded') return;
-	const config = MUSIC[desiredMusicTrack];
-	primeIosHtml5Music(howl, {
-		volume: selectedMusicVolume(),
-		rate: config.rateSensitive ? normalizeMusicRate(audioState.rate, false) : 1,
-		loop: config.loop
+	nextTransport.setHandlers({
+		onNaturalEnd: (cueKey) => nextCoordinator.naturalEnd(cueKey),
+		onContextState: (state) => nextCoordinator.markInterrupted(state),
+		onContextRunning: () => {
+			// Native running events also fire for our own activate/recover calls. Only
+			// treat one as auto-recovery when public state says an interruption is
+			// actually outstanding; otherwise it can reconcile a pre-recovery cue.
+			resumeInterrupted();
+		},
+		onSessionActive: resumeInterrupted
 	});
+	nextTransport.setMuted(!audioState.enabled);
+	transport = nextTransport;
+	coordinator = nextCoordinator;
+	return { coordinator: nextCoordinator, transport: nextTransport };
 }
 
-function cancelMusicRateGlide() {
-	if (musicRateFrame) cancelAnimationFrame(musicRateFrame);
-	musicRateFrame = 0;
+/** @param {string} id */
+function assertMusic(id) {
+	if (!(id in MUSIC_ASSETS)) throw new TypeError(`Unknown music track: ${id}`);
 }
 
-/** @param {number} target */
-function glideActiveMusicRate(target) {
-	if (!activeMusic || !MUSIC[activeMusic.track].rateSensitive) return;
-	const music = activeMusic;
-	const from = Number(music.howl.rate(music.id));
-	if (!Number.isFinite(from) || Math.abs(from - target) < 0.001) {
-		cancelMusicRateGlide();
-		music.howl.rate(target, music.id);
-		return;
-	}
-	cancelMusicRateGlide();
-	const startedAt = performance.now();
-	const step = (/** @type {number} */ now) => {
-		if (activeMusic !== music) {
-			musicRateFrame = 0;
-			return;
+/** @param {string} id */
+function assertSfx(id) {
+	if (!(id in SFX_ASSETS)) throw new TypeError(`Unknown sound effect: ${id}`);
+}
+
+export const audio = {
+	activateFromGesture() {
+		const current = runtime();
+		if (audioState.enabled) current.transport.preloadCompressed();
+		return current.coordinator.activateFromGesture();
+	},
+
+	recoverFromGesture() {
+		return runtime().coordinator.recoverFromGesture();
+	},
+
+	/** @param {boolean} enabled */
+	setEnabled(enabled) {
+		const value = !!enabled;
+		const current = runtime();
+		if (value) current.transport.preloadCompressed();
+		const request = current.coordinator.setEnabled(value);
+		try {
+			localStorage.setItem(STORAGE_KEY, value ? 'on' : 'off');
+		} catch {
+			// Preference storage can be disabled in private browsing; sound still works.
 		}
-		const progress = Math.min(1, (now - startedAt) / MUSIC_RATE_GLIDE_MS);
-		music.howl.rate(glidingMusicRate(from, target, progress), music.id);
-		if (progress < 1) musicRateFrame = requestAnimationFrame(step);
-		else musicRateFrame = 0;
-	};
-	musicRateFrame = requestAnimationFrame(step);
-}
+		return request;
+	},
 
-/** @param {number} [duration] */
-function updateMusicVolume(duration = 120) {
-	if (!activeMusic || activeMusic.track !== desiredMusicTrack) return;
-	const target = selectedMusicVolume();
-	const current = Number(activeMusic.howl.volume(activeMusic.id));
-	if (!activeMusic.howl.playing(activeMusic.id) || duration <= 0 || !Number.isFinite(current)) {
-		activeMusic.howl.volume(target, activeMusic.id);
-		return;
+	/** @param {keyof typeof MUSIC_ASSETS} track */
+	prepareMusic(track) {
+		assertMusic(track);
+		const current = runtime();
+		current.transport.preloadCompressed();
+		return current.coordinator.prepareMusic(track);
+	},
+
+	music: {
+		/**
+		 * @param {keyof typeof MUSIC_ASSETS} track
+		 * @param {{ cueKey?: string, rate?: 'slow' | 'normal' | 'fast' | number, startOffset?: number, restart?: boolean, transition?: { ms?: number } | 'cut' }} [options]
+		 */
+		play(track, options = {}) {
+			assertMusic(track);
+			return runtime().coordinator.play(track, options);
+		},
+
+		/** @param {{ transition?: { ms?: number } | 'cut' }} [options] */
+		stop(options = {}) {
+			return runtime().coordinator.stop(options);
+		},
+
+		/** @param {'slow' | 'normal' | 'fast' | number} rate @param {{ rampMs?: number }} [options] */
+		setRate(rate, options = {}) {
+			return runtime().coordinator.setRate(rate, options);
+		},
+
+		/** @param {string} label @param {number} amount */
+		duck(label, amount) {
+			const owner = Symbol(label);
+			const currentTransport = runtime().transport;
+			currentTransport.setDuck(owner, amount);
+			let released = false;
+			return () => {
+				if (released) return;
+				released = true;
+				currentTransport.clearDuck(owner);
+			};
+		}
+	},
+
+	sfx: {
+		/**
+		 * @param {keyof typeof SFX_ASSETS} id
+		 * @param {{ volume?: number, rate?: number, tag?: string, maxLatencyMs?: number }} [options]
+		 */
+		play(id, options = {}) {
+			assertSfx(id);
+			if (!audioState.enabled || !audioState.started) return Promise.resolve(null);
+			return runtime().transport.playSfx(id, {
+				...options,
+				maxLatencyMs:
+					options.maxLatencyMs ?? (RESPONSIVE_SFX.has(id) ? 150 : Number.POSITIVE_INFINITY)
+			});
+		},
+
+		/** @param {string} tag */
+		stop(tag) {
+			runtime().transport.stopSfx(tag);
+		},
+
+		/** @param {string} name */
+		createScope(name) {
+			const scope = `${name}:${++scopeSerial}`;
+			const currentTransport = runtime().transport;
+			let disposed = false;
+			return {
+				/**
+				 * @param {keyof typeof SFX_ASSETS} id
+				 * @param {{ volume?: number, rate?: number, tag?: string, maxLatencyMs?: number }} [options]
+				 */
+				play(id, options = {}) {
+					assertSfx(id);
+					if (disposed || !audioState.enabled || !audioState.started)
+						return Promise.resolve(null);
+					return currentTransport.playSfx(id, {
+						...options,
+						tag: options.tag ? `${scope}:${options.tag}` : undefined,
+						scope,
+						maxLatencyMs: options.maxLatencyMs ?? Number.POSITIVE_INFINITY
+					});
+				},
+				stop() {
+					currentTransport.stopSfxScope(scope);
+				},
+				dispose() {
+					if (disposed) return;
+					disposed = true;
+					currentTransport.stopSfxScope(scope);
+				}
+			};
+		}
+	},
+
+	suspend() {
+		return runtime().coordinator.suspend();
+	},
+
+	resume() {
+		return runtime().coordinator.resume();
+	},
+
+	async dispose() {
+		const currentCoordinator = coordinator;
+		coordinator = null;
+		transport = null;
+		legacyDucks.clear();
+		if (currentCoordinator) await currentCoordinator.dispose();
+		applyState({
+			started: false,
+			ready: false,
+			musicTrack: '',
+			requestedTrack: '',
+			activeTrack: '',
+			cueKey: '',
+			status: 'idle',
+			interruptionReason: '',
+			errorCategory: ''
+		});
 	}
-	activeMusic.howl.fade(current, target, duration, activeMusic.id);
-}
-
-/**
- * @param {keyof typeof MUSIC} track
- * @param {boolean} restart
- */
-async function switchMusic(track, restart) {
-	if (!ensureInitialized()) return;
-	const token = ++musicSwitchToken;
-	const howl = musicHowls.get(track);
-	if (!howl) return;
-	// Avoid crossing an `await` when the file is already ready. Safari requires
-	// the initial media play to remain on the synchronous stack of the tap that
-	// started the quiz; even awaiting an already-resolved promise loses that
-	// user activation.
-	const loaded = howl.state() === 'loaded' ? true : await loadHowl(howl);
-	if (token !== musicSwitchToken || desiredMusicTrack !== track) return;
-	if (!loaded) {
-		audioState.musicFailed = true;
-		return;
-	}
-	if (!audioState.enabled || !audioState.started) return;
-
-	if (activeMusic?.track === track && !restart) {
-		if (!activeMusic.howl.playing(activeMusic.id)) activeMusic.howl.play(activeMusic.id);
-		updateMusicVolume(0);
-		return;
-	}
-	if (completedMusicTrack === track && !restart) return;
-
-	cancelMusicRateGlide();
-	const previous = activeMusic;
-	activeMusic = null;
-	audioState.musicTrack = '';
-	audioState.ready = false;
-	if (previous) {
-		const from = Number(previous.howl.volume(previous.id));
-		if (previous.howl.playing(previous.id) && Number.isFinite(from))
-			previous.howl.fade(from, 0, MUSIC_FADE_MS, previous.id);
-		await new Promise((resolve) => setTimeout(resolve, MUSIC_FADE_MS));
-		previous.howl.stop(previous.id);
-	}
-	if (
-		token !== musicSwitchToken ||
-		desiredMusicTrack !== track ||
-		!audioState.enabled ||
-		!audioState.started
-	)
-		return;
-
-	completedMusicTrack = '';
-	const volume = selectedMusicVolume();
-	const rate = MUSIC[track].rateSensitive
-		? normalizeMusicRate(audioState.rate, Howler.usingWebAudio && !iosHtml5Audio)
-		: 1;
-	howl.volume(volume);
-	howl.rate(rate);
-	const id = howl.play();
-	activeMusic = { track, howl, id };
-	howl.volume(volume, id);
-	howl.rate(rate, id);
-}
+};
 
 export function hydrateAudioPreference() {
-	if (!hydrated && typeof localStorage !== 'undefined') {
-		hydrated = true;
-		const saved = localStorage.getItem(STORAGE_KEY);
-		if (saved === 'off') audioState.enabled = false;
-		else if (saved === 'on') audioState.enabled = true;
+	if (hydrated) return;
+	hydrated = true;
+	let saved = null;
+	try {
+		saved = localStorage.getItem(STORAGE_KEY);
+	} catch {
+		return;
 	}
-	ensureInitialized();
+	if (saved !== 'on' && saved !== 'off') return;
+	const enabled = saved === 'on';
+	if (audioState.enabled === enabled) return;
+	runtime().coordinator.setEnabled(enabled);
 }
 
+// Compatibility exports keep existing question components small while all of
+// them route through the same coordinator and graph.
 export function startAudio() {
-	audioState.started = true;
-	if (!ensureInitialized() || !audioState.enabled) return;
-	Howler.mute(false);
-	primeSelectedIosMusic();
-	void switchMusic(desiredMusicTrack, false);
-	resumeAudio();
-	schedulePreload();
+	return audio.activateFromGesture();
 }
 
 /** @param {boolean} enabled */
 export function setAudioEnabled(enabled) {
-	audioState.enabled = enabled;
-	if (typeof localStorage !== 'undefined') localStorage.setItem(STORAGE_KEY, enabled ? 'on' : 'off');
-	if (!ensureInitialized()) return;
-	Howler.mute(!enabled);
-	if (enabled && audioState.started) {
-		startAudio();
-	}
+	return audio.setEnabled(enabled);
 }
 
-/** @param {number} rate */
+/** @param {'slow' | 'normal' | 'fast' | number} rate */
 export function setMusicRate(rate) {
-	const next = normalizeMusicRate(rate, true);
-	audioState.rate = next;
-	if (!activeMusic || !MUSIC[activeMusic.track].rateSensitive) return;
-	glideActiveMusicRate(normalizeMusicRate(next, Howler.usingWebAudio && !iosHtml5Audio));
-	updateMusicVolume(200);
+	return audio.music.setRate(musicRateMode(rate));
 }
 
-/**
- * @param {keyof typeof MUSIC} id
- * @param {{ restart?: boolean }} [options]
- */
-export async function setMusicTrack(id, { restart = false } = {}) {
-	if (!MUSIC[id]) return;
-	desiredMusicTrack = id;
-	completedMusicTrack = '';
-	audioState.musicFailed = false;
-	if (audioState.musicTrack !== id) {
-		audioState.musicTrack = '';
-		audioState.ready = false;
-	}
-	if (!ensureInitialized()) return;
-	if (!audioState.enabled || !audioState.started) {
-		const loaded = await loadHowl(musicHowls.get(id));
-		if (!loaded && desiredMusicTrack === id) audioState.musicFailed = true;
-		return;
-	}
-	await switchMusic(id, restart);
+/** @param {keyof typeof MUSIC_ASSETS} id @param {{ restart?: boolean }} [options] */
+export function setMusicTrack(id, options = {}) {
+	return audio.music.play(id, { cueKey: `legacy:${id}`, restart: options.restart });
 }
 
-/**
- * Stop the selected score without choosing a replacement. Marking it complete
- * prevents gesture and visibility recovery from restarting it; a later
- * `setMusicTrack` call explicitly begins the next scene's music.
- */
 export function stopMusic() {
-	musicSwitchToken += 1;
-	cancelMusicRateGlide();
-	completedMusicTrack = desiredMusicTrack;
-	const previous = activeMusic;
-	activeMusic = null;
-	audioState.musicTrack = '';
-	audioState.ready = false;
-	if (previous) previous.howl.stop(previous.id);
+	return audio.music.stop();
 }
 
 /** @param {string} key @param {number} amount */
 export function duckMusic(key, amount) {
-	duckRequests.set(key, Number.isFinite(amount) ? Math.max(0, Math.min(1, amount)) : 1);
-	updateMusicVolume();
+	legacyDucks.get(key)?.();
+	legacyDucks.set(key, audio.music.duck(`legacy:${key}`, amount));
 }
 
 /** @param {string} key */
 export function clearMusicDuck(key) {
-	duckRequests.delete(key);
-	updateMusicVolume();
+	legacyDucks.get(key)?.();
+	legacyDucks.delete(key);
 }
 
 /**
- * @param {keyof typeof SFX} id
- * @param {{ volume?: number, rate?: number, tag?: string }} [options]
- * @returns {Promise<number | null>}
+ * @param {keyof typeof SFX_ASSETS} id
+ * @param {{ volume?: number, rate?: number, tag?: string, maxLatencyMs?: number }} [options]
  */
-export async function playSfx(id, options = {}) {
-	if (!audioState.enabled || !audioState.started || !ensureInitialized()) return null;
-	const howl = sfxHowls.get(id);
-	if (!howl) return null;
-	const token = {};
-	if (options.tag) stopSfx(options.tag);
-	const soundId = howl.play();
-	howl.volume(normalizeSfxVolume(options.volume), soundId);
-	howl.rate(normalizeSfxRate(options.rate), soundId);
-	if (options.tag) {
-		const tag = options.tag;
-		taggedSounds.set(tag, { token, howl, id: soundId });
-		const clear = () => {
-			if (taggedSounds.get(tag)?.token === token) taggedSounds.delete(tag);
-		};
-		howl.once('end', clear, soundId);
-		howl.once('stop', clear, soundId);
-	}
-	return soundId;
-}
-
-/**
- * The 18 ms RSVP tick remains procedural for precise 1,500 WPM timing, but it
- * now uses the context that Howler has already unlocked and owns.
- */
-export function playReaderTick() {
-	if (
-		!audioState.enabled ||
-		!audioState.started ||
-		!ensureInitialized() ||
-		!Howler.usingWebAudio ||
-		!Howler.ctx ||
-		!Howler.masterGain
-	)
-		return;
-	const ctx = Howler.ctx;
-	if (ctx.state !== 'running') return;
-	const now = ctx.currentTime;
-	const oscillator = ctx.createOscillator();
-	const gain = ctx.createGain();
-	oscillator.type = 'sine';
-	oscillator.frequency.value = 880;
-	gain.gain.setValueAtTime(0.0001, now);
-	gain.gain.exponentialRampToValueAtTime(0.036, now + 0.002);
-	gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.018);
-	oscillator.connect(gain);
-	gain.connect(Howler.masterGain);
-	oscillator.start(now);
-	oscillator.stop(now + 0.02);
-	oscillator.onended = () => {
-		oscillator.disconnect();
-		gain.disconnect();
-	};
+export function playSfx(id, options = {}) {
+	return audio.sfx.play(id, options);
 }
 
 /** @param {string} tag */
 export function stopSfx(tag) {
-	const active = taggedSounds.get(tag);
-	taggedSounds.delete(tag);
-	if (active) {
-		if (!active.howl.playing(active.id)) canceledSoundIds.add(active.id);
-		active.howl.stop(active.id);
-	}
+	audio.sfx.stop(tag);
 }
 
 export function suspendAudio() {
-	if (!initialized) return;
-	if (!iosHtml5Audio && Howler.usingWebAudio && Howler.ctx) {
-		if (Howler.ctx.state === 'running') void Howler.ctx.suspend();
-		return;
-	}
-	if (activeMusic?.howl.playing(activeMusic.id)) {
-		activeMusic.howl.pause(activeMusic.id);
-		htmlMusicPaused = true;
-	}
-	for (const [tag, active] of taggedSounds) {
-		if (!active.howl.playing(active.id)) continue;
-		active.howl.pause(active.id);
-		htmlTagsPaused.add(tag);
-	}
+	return audio.suspend();
 }
 
 export function resumeAudio() {
-	if (!audioState.enabled || !audioState.started || !ensureInitialized()) return;
-	Howler.mute(false);
-	if (!iosHtml5Audio && Howler.usingWebAudio && Howler.ctx) {
-		if (Howler.ctx.state === 'running') {
-			if (!activeMusic && completedMusicTrack !== desiredMusicTrack)
-				void switchMusic(desiredMusicTrack, false);
-			return;
+	return audio.resume();
+}
+
+export function playReaderTick() {
+	if (!audioState.enabled || !audioState.started) return;
+	runtime().transport.playReaderTick();
+}
+
+if (typeof window !== 'undefined' && import.meta.env.DEV) {
+	const debug = {
+		snapshot: () => JSON.parse(JSON.stringify(audioState)),
+		suspend: () => audio.suspend(),
+		play: (/** @type {keyof typeof MUSIC_ASSETS} */ track, options = {}) =>
+			audio.music.play(track, options).whenStarted,
+		stop: () => audio.music.stop({ transition: 'cut' }).whenStarted,
+		get trace() {
+			return traceEntries.map((entry) => ({ ...entry, detail: { ...entry.detail } }));
 		}
-		void Howler.ctx
-			.resume()
-			.then(() => {
-				if (!activeMusic && completedMusicTrack !== desiredMusicTrack)
-					void switchMusic(desiredMusicTrack, false);
-			})
-			.catch((error) => warn('Audio resume failed', error));
-		return;
-	}
-	if (htmlMusicPaused && activeMusic) activeMusic.howl.play(activeMusic.id);
-	htmlMusicPaused = false;
-	for (const tag of htmlTagsPaused) {
-		const active = taggedSounds.get(tag);
-		if (active) active.howl.play(active.id);
-	}
-	htmlTagsPaused.clear();
-	if (!activeMusic && completedMusicTrack !== desiredMusicTrack)
-		void switchMusic(desiredMusicTrack, false);
+	};
+	/** @type {any} */ (window).__quizAudio = debug;
+	Object.defineProperty(window, '__quizAudioTrace', {
+		configurable: true,
+		get: () => debug.trace
+	});
 }

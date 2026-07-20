@@ -5,8 +5,21 @@
 	// Rows share one budget, so + is blocked once the budget is spent.
 	import SplitText from '$lib/SplitText.svelte';
 	import { cascade, ITEM_MS } from '$lib/reveal.js';
+	import { recordDraft } from '$lib/questions/metrics.svelte.js';
+	import SubmitAnswer from './SubmitAnswer.svelte';
 
-	let { prompt, budget, step = 10, categories, toScore, onAnswer } = $props();
+	// `remainderNote` renames what the unspent balance means. Left unset it is
+	// simply "left to spend"; a question where the leftover goes into the
+	// taker's pocket says so, because that changes the decision entirely.
+	let {
+		prompt,
+		budget,
+		step = 10,
+		categories,
+		remainderNote = '',
+		toScore,
+		onAnswer
+	} = $props();
 
 	// prompt → rule → category rows → submit (last, once the rows have landed).
 	const seq = $derived.by(() => {
@@ -26,6 +39,11 @@
 
 	const total = $derived(Object.values(values).reduce((a, b) => a + b, 0));
 	const remaining = $derived(budget - total);
+	let committed = $state(false);
+
+	function recordValues() {
+		recordDraft({ format: 'allocation', value: values });
+	}
 
 	/** @param {{ tiers: Record<number, string> }} cat */
 	const maxOf = (cat) => Math.max(...Object.keys(cat.tiers).map(Number));
@@ -34,6 +52,7 @@
 	function inc(cat) {
 		if (values[cat.id] + step <= maxOf(cat) && remaining >= step) {
 			values = { ...values, [cat.id]: values[cat.id] + step };
+			recordValues();
 		}
 	}
 
@@ -41,10 +60,14 @@
 	function dec(cat) {
 		if (values[cat.id] - step >= 0) {
 			values = { ...values, [cat.id]: values[cat.id] - step };
+			recordValues();
 		}
 	}
 
 	function submit() {
+		if (committed) return;
+		committed = true;
+		recordValues();
 		onAnswer(toScore(values));
 	}
 </script>
@@ -54,7 +77,8 @@
 	<hr class="rule" style="animation-delay: {seq.rule}ms" />
 
 	<p class="remaining" class:tight={remaining === 0} style="animation-delay: {seq.rows}ms">
-		<span class="amt">${remaining}</span> of ${budget} left to spend
+		<span class="amt">${remaining}</span> of ${budget}
+		{remainderNote ? `left — ${remainderNote}` : 'left to spend'}
 	</p>
 
 	<div class="rows">
@@ -81,9 +105,7 @@
 		{/each}
 	</div>
 
-	<button class="submit" onclick={submit} style="animation-delay: {seq.submit}ms"
-		>Lock in my dinner →</button
-	>
+	<SubmitAnswer {committed} delay={seq.submit} label="Lock in my dinner →" onsubmit={submit} />
 </div>
 
 <style>
@@ -169,23 +191,6 @@
 	.desc {
 		color: var(--muted);
 		font-style: italic;
-	}
-	.submit {
-		animation: rise 0.42s both;
-		display: block;
-		margin: 0 auto;
-		padding: 0.75rem 1.5rem;
-		background: var(--ink);
-		color: var(--surface);
-		border: none;
-		border-radius: var(--radius);
-		font: inherit;
-		font-weight: 600;
-		cursor: pointer;
-		transition: filter 0.12s ease;
-	}
-	.submit:hover {
-		filter: brightness(1.08);
 	}
 	@media (max-width: 560px) {
 		.row {

@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-	glidingMusicRate,
 	MUSIC_RATES,
 	musicVolume,
 	normalizeMusicRate,
 	normalizeSfxRate,
-	normalizeSfxVolume
+	normalizeSfxVolume,
+	scheduleMusicRate
 } from './mix.js';
 
 test('normalizes the three authored music rates without non-finite values', () => {
@@ -17,17 +17,53 @@ test('normalizes the three authored music rates without non-finite values', () =
 	assert.equal(normalizeMusicRate(Number.POSITIVE_INFINITY), 1);
 });
 
-test('keeps the HTML audio fallback inside Howler documented rates', () => {
-	assert.equal(normalizeMusicRate(1 / 3, false), 0.5);
-	assert.equal(normalizeMusicRate(5, false), 4);
+test('reverses a live rate ramp from its held value and reaches the exact endpoint one second later', () => {
+	/** @type {Array<Array<number | string>>} */
+	const calls = [];
+	const param = {
+		value: 1,
+		cancelScheduledValues: (/** @type {number} */ time) => calls.push(['cancel', time]),
+		cancelAndHoldAtTime: (/** @type {number} */ time) => calls.push(['hold', time]),
+		setValueAtTime(/** @type {number} */ value, /** @type {number} */ time) {
+			calls.push(['value', value, time]);
+		},
+		exponentialRampToValueAtTime(/** @type {number} */ value, /** @type {number} */ time) {
+			calls.push(['exponential', value, time]);
+		}
+	};
+
+	scheduleMusicRate(param, 5, 10, 1);
+	const heldAtFortyPercent = Math.pow(5, 0.4);
+	scheduleMusicRate(param, 1, 10.4, 1, heldAtFortyPercent);
+
+	assert.deepEqual(calls, [
+		['hold', 10],
+		['exponential', 5, 11],
+		['hold', 10.4],
+		['exponential', 1, 11.4]
+	]);
 });
 
-test('glides music rate like a record settling back to speed', () => {
-	assert.equal(glidingMusicRate(5, 1, 0), 5);
-	assert.equal(glidingMusicRate(5, 1, 1), 1);
-	const halfway = glidingMusicRate(5, 1, 0.5);
-	assert.ok(halfway > 1 && halfway < 3);
-	assert.equal(glidingMusicRate(Number.NaN, 1, 0), 1);
+test('uses the computed mid-ramp value when cancelAndHoldAtTime is unavailable', () => {
+	/** @type {Array<Array<number | string>>} */
+	const calls = [];
+	const param = {
+		value: 1,
+		cancelScheduledValues: (/** @type {number} */ time) => calls.push(['cancel', time]),
+		setValueAtTime: (/** @type {number} */ value, /** @type {number} */ time) =>
+			calls.push(['value', value, time]),
+		exponentialRampToValueAtTime: (/** @type {number} */ value, /** @type {number} */ time) =>
+			calls.push(['exponential', value, time])
+	};
+	const heldAtHalfway = Math.sqrt(5);
+
+	scheduleMusicRate(param, 1, 4.5, 1, heldAtHalfway);
+
+	assert.deepEqual(calls, [
+		['cancel', 4.5],
+		['value', heldAtHalfway, 4.5],
+		['exponential', 1, 5.5]
+	]);
 });
 
 test('reconstructs the remastered default music mix and applies ducking', () => {
@@ -38,7 +74,7 @@ test('reconstructs the remastered default music mix and applies ducking', () => 
 	assert.equal(musicVolume('asteroid', 1, 0.22), 0.22);
 });
 
-test('sanitizes per-play sound options to Howler public ranges', () => {
+test('sanitizes per-play sound options to native gain and rate ranges', () => {
 	assert.equal(normalizeSfxVolume(undefined), 1);
 	assert.equal(normalizeSfxVolume(3), 1);
 	assert.equal(normalizeSfxVolume(-2), 0);

@@ -4,8 +4,15 @@
 	// keyboard with every key removed. Tapping a suggestion sends it as your
 	// message, then commits that option's score.
 	import { onMount } from 'svelte';
+	import SubmitAnswer from './SubmitAnswer.svelte';
+	import { recordDraft } from '$lib/questions/metrics.svelte.js';
 
-	let { title, sender, messages, options, onAnswer } = $props();
+	// `history` is optional: an already-read backlog rendered instantly and
+	// scrolled to the bottom, for questions where the argument happened BEFORE
+	// the taker arrived. Entries are { from: 'them' | 'you' | 'system', text }.
+	// `messages` keeps its original shape (plain strings, typed in one by one)
+	// so the questions that predate this prop are untouched.
+	let { title, sender, messages, options, onAnswer, history = [], prompt = '' } = $props();
 
 	// iMessage-style data detection: emails render as underlined blue links.
 	const EMAIL_RE = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
@@ -22,14 +29,22 @@
 		return out;
 	}
 
+	/** @type {HTMLElement | undefined} */
+	let thread = $state();
 	let shown = $state(0); // incoming bubbles revealed so far
 	let typing = $state(false); // typing-indicator bubble visible
 	/** @type {number | null} */
 	let sent = $state(null); // index of the chosen suggestion
+	/** @type {number | null} */
+	let picked = $state(null);
+	let committed = $state(false);
 
-	const ready = $derived(shown === messages.length && sent === null);
+	const ready = $derived(shown === messages.length && !committed);
 
 	onMount(() => {
+		// Land at the bottom of the backlog, where a real thread opens — the
+		// taker scrolls UP to find out what happened.
+		if (thread) thread.scrollTop = thread.scrollHeight;
 		let cancelled = false;
 		/** @type {ReturnType<typeof setTimeout>[]} */
 		const timers = [];
@@ -78,20 +93,38 @@
 
 	/** @param {number} i */
 	function choose(i) {
-		if (justDragged || sent !== null || shown < messages.length) return;
-		sent = i;
-		// let the sent bubble pop in before moving on
-		setTimeout(() => onAnswer(options[i].score), 900);
+		if (justDragged || committed || shown < messages.length) return;
+		picked = i;
+		recordDraft({ format: 'chat-choice', value: options[i].id ?? i, label: options[i].label });
+	}
+
+	function submit() {
+		const choice = picked;
+		if (choice === null || committed || shown < messages.length) return;
+		committed = true;
+		sent = choice;
+		// Let the sent bubble pop in before moving on.
+		setTimeout(() => onAnswer(options[choice].score), 900);
 	}
 </script>
 
+{#if prompt}
+	<h2 class="chat-prompt" data-reader-text>{prompt}</h2>
+{/if}
 <div class="phone">
 	<div class="chat-header">
 		<span class="avatar" aria-hidden="true">№</span>
 		<p class="chat-name">{title}</p>
 	</div>
-	<div class="chat">
+	<div class="chat" bind:this={thread}>
 		<p class="sender-name">{sender}</p>
+		{#each history as h}
+			{#if h.from === 'system'}
+				<p class="system">{h.text}</p>
+			{:else}
+				<div class="bubble {h.from === 'you' ? 'out' : 'in'} settled">{h.text}</div>
+			{/if}
+		{/each}
 		{#each messages.slice(0, shown) as m}
 			<div class="bubble in">
 				{#each segments(m) as seg}{#if seg.link}<span class="data-link">{seg.text}</span
@@ -108,6 +141,7 @@
 		{/if}
 	</div>
 	<div class="keyboard">
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
 			class="quicktype"
 			class:ready
@@ -119,25 +153,38 @@
 			{#each options as opt, i}
 				<button
 					class="chip"
-					class:sent={sent === i}
+					class:sent={picked === i}
 					data-sfx="chat-send"
-					disabled={sent !== null}
+					data-reader-option={opt.readerLabel ?? opt.label}
+					data-answer-id={opt.id ?? i}
+					aria-pressed={picked === i}
+					disabled={committed || !ready}
 					onclick={() => choose(i)}
 				>
-					{opt.label}
+					<span data-reader-label>{opt.label}</span>
 				</button>
 			{/each}
 		</div>
 		<div class="home-bar"></div>
 	</div>
 </div>
+<SubmitAnswer
+	disabled={picked === null || !ready}
+	{committed}
+	label="Send answer →"
+	onsubmit={submit}
+/>
 
 <style>
 	/* An inset phone screen — deliberately NOT the site serif/monochrome. */
 	.phone {
 		display: flex;
 		flex-direction: column;
+		/* A ceiling as well as a floor, so a long backlog scrolls inside the
+		   phone like a real thread instead of stretching the handset down the
+		   page. Short threads are unaffected — they simply don't reach it. */
 		min-height: 26rem;
+		max-height: 30rem;
 		font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'Segoe UI', sans-serif;
 		border: 1px solid #d6d6d4;
 		border-radius: 1.2rem;
@@ -178,6 +225,8 @@
 		flex-direction: column;
 		gap: 0.3rem;
 		flex: 1;
+		min-height: 0; /* lets the flex child actually shrink so overflow applies */
+		overflow-y: auto;
 		padding: 1.1rem 1rem 1rem;
 	}
 	.sender-name {
@@ -192,6 +241,27 @@
 		font-size: 0.95rem;
 		line-height: 1.35;
 		animation: bubble-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+	}
+	/* Backlog bubbles are already on screen when the question opens, so they must
+	   not replay the arrival pop that the typed messages use. */
+	.chat-prompt {
+		margin: 0 0 1.25rem;
+		font-size: 1.85rem;
+		font-style: italic;
+		font-weight: 600;
+		line-height: 1.25;
+		text-align: center;
+	}
+	.bubble.settled {
+		animation: none;
+	}
+	/* iMessage-style grey system notice, centred and unattributed. */
+	.system {
+		align-self: center;
+		margin: 0.5rem 0;
+		font-size: 0.72rem;
+		color: #8a8a8e;
+		text-align: center;
 	}
 	.bubble.in {
 		align-self: flex-start;

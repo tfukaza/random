@@ -1,10 +1,12 @@
 <script>
 	// Shared presentational helper for pick-one questions. A question component
 	// just hands us a prompt + options (each carrying its own score delta) and
-	// the onAnswer callback; we render the choices and auto-commit on click.
+	// the onAnswer callback; we render an editable choice and a separate submit.
 	// Layout adapts: <=4 options → 2-col cards, more → a compact single column.
 	import SplitText from '$lib/SplitText.svelte';
 	import { cascade, ITEM_MS } from '$lib/reveal.js';
+	import SubmitAnswer from './SubmitAnswer.svelte';
+	import { recordDraft } from '$lib/questions/metrics.svelte.js';
 
 	// `premise` is optional scene-setting shown above the prompt — used by lore
 	// arc questions (see docs/lore.md); plain questions just omit it.
@@ -29,7 +31,8 @@
 			prompt: c.text(prompt),
 			rule: c.rule(),
 			figure: children ? c.block() : 0,
-			cards: c.items(options.length)
+			cards: c.items(options.length),
+			submit: c.action()
 		};
 	});
 
@@ -37,6 +40,7 @@
 	let picked = $state(null);
 	/** @type {{ i: number, x: number, y: number, size: number } | null} */
 	let ripple = $state(null);
+	let committed = $state(false);
 
 	const columns = $derived(options.length <= 4 ? 2 : 1);
 
@@ -45,8 +49,10 @@
 	 * @param {MouseEvent} event
 	 */
 	function choose(i, event) {
+		if (committed) return;
 		picked = i;
 		onPick?.(i);
+		recordDraft({ format: 'single-choice', value: options[i].id ?? i, label: options[i].label });
 		const card = /** @type {HTMLElement} */ (event.currentTarget);
 		const rect = card.getBoundingClientRect();
 		ripple = {
@@ -56,8 +62,13 @@
 			x: event.clientX ? event.clientX - rect.left : rect.width / 2,
 			y: event.clientY ? event.clientY - rect.top : rect.height / 2
 		};
-		// let the ripple + picked state play before advancing
-		setTimeout(() => onAnswer(options[i].score), 520);
+	}
+
+	function submit() {
+		const choice = picked;
+		if (choice === null || committed) return;
+		committed = true;
+		setTimeout(() => onAnswer(options[choice].score), 520);
 	}
 </script>
 
@@ -74,12 +85,15 @@
 		{#each options as opt, i}
 			<button
 				class="card"
+				data-reader-option={opt.readerLabel ?? opt.label}
+				data-answer-id={opt.id ?? i}
+				aria-pressed={picked === i}
 				class:picked={picked === i}
 				style="animation-delay: {seq.cards + i * ITEM_MS}ms"
-				disabled={picked !== null}
+				disabled={committed}
 				onclick={(e) => choose(i, e)}
 			>
-				<span class="label" style={opt.font ? `font-family: ${opt.font}; font-size: 1.4rem;` : ''}
+				<span data-reader-label class="label" style={opt.font ? `font-family: ${opt.font}; font-size: 1.4rem;` : ''}
 					>{opt.label}</span
 				>
 				{#if ripple && ripple.i === i}
@@ -91,6 +105,7 @@
 			</button>
 		{/each}
 	</div>
+	<SubmitAnswer disabled={picked === null} {committed} delay={seq.submit} onsubmit={submit} />
 </div>
 
 <style>

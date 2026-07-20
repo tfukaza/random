@@ -5,9 +5,12 @@
 	let shown = $state(0);
 
 	$effect(() => {
+		/** @type {number | undefined} */
 		let raf;
+		/** @type {number | undefined} */
 		let start;
 		const target = value;
+		/** @param {number} now */
 		const tick = (now) => {
 			if (start === undefined) start = now;
 			const t = Math.min(1, (now - start) / duration);

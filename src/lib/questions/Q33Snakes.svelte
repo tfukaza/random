@@ -3,19 +3,21 @@
 	// in pure CSS and full monochrome: concentric rings of stepped luminance
 	// segments (black → dark → white → light) that peripheral vision misreads
 	// as rotation, with adjacent rings reversed so they seem to counter-rotate.
-	// The trap: unlike the textbook version, these discs genuinely ARE rotating
-	// — but only occasionally. Every 4 seconds each disc creeps 1° over one
-	// second (a true 1°/s motion), then holds still. Anyone who recognizes the
-	// famous illusion will smugly answer "not moving" and be wrong; "1° a
-	// second, but only occasionally" is the absurdly precise correct answer.
+	// The trap: unlike the textbook version, these discs genuinely ARE rotating —
+	// but only in bursts. Once every three seconds each disc turns 10° over a
+	// single second (a true 10°/s creep), then holds perfectly still. Anyone who
+	// recognises the famous illusion will smugly answer "they're not moving" and
+	// be wrong, and the four numeric options force a commitment to both a RATE
+	// and a PATTERN. "10° a second, but only occasionally" is right about each.
 	import PickList from './PickList.svelte';
+	import { sharpenAgainstDetailClaim } from './detailClaim.js';
 	let { onAnswer } = $props();
 
 	// Post-answer reveal (same mechanic family as Q22): once an option is
 	// picked, every disc but the center one fades away, a red needle pokes out
-	// of the survivor, and a red contrail arc accumulates behind the needle's
-	// tip as it creeps — making the genuine rotation undeniable — before the
-	// quiz moves on.
+	// of the survivor disc, and a red contrail arc accumulates behind the needle's
+	// tip as it turns — the 6.2s reveal spans two full creep-and-hold cycles, so
+	// the taker watches it happen twice — before the quiz moves on.
 	let revealed = $state(false);
 	/** @type {HTMLElement[]} */
 	let spinEls = $state([]);
@@ -30,8 +32,18 @@
 		return r === 'none' ? 0 : parseFloat(r);
 	}
 
+	// Both 10° answers count as having seen the motion — they got the rate right
+	// and at worst the pattern wrong, and the fully-correct one already scores
+	// better on its own merits. A miss is underestimating tenfold or, worst,
+	// declaring a visibly turning disc to be stationary.
+	const DETECTED = new Set([2, 3]);
+	let pickedIndex = -1;
+
 	/** @param {Record<string, number>} score */
 	function handleAnswer(score) {
+		// Collect on the detail claim before the reveal starts, then hand the
+		// adjusted delta to onAnswer 6.2s later along with everything else.
+		score = sharpenAgainstDetailClaim(score, !DETECTED.has(pickedIndex));
 		revealed = true;
 		const spin = spinEls[4];
 		if (spin) {
@@ -55,13 +67,16 @@
 
 	const prompt = 'Look at the figure for a few seconds. How fast would you estimate it is moving?';
 	const options = [
-		{ label: 'Not moving at all', score: { risk: -1, scope: -1 } },
-		{ label: '1° per second', score: { scope: -2 } },
-		// watching closely enough to catch the creep is peak detail-orientation
-		{ label: '1° a second, but only occasionally', score: { scope: -3 } },
-		{ label: '2° per second', score: { scope: 1 } },
-		{ label: '4° per second', score: { creative: 1, scope: 1 } },
-		{ label: '16° per second', score: { scope: 2, risk: 1 } }
+		{ label: '1° per second', score: { scope: 1 } },
+		// Right about the burst, wrong about the rate by a factor of ten.
+		{ label: '1° a second, but only occasionally', score: { scope: -1 } },
+		// Right about the rate, wrong about the burst.
+		{ label: '10° per second', score: { scope: -1 } },
+		// The truth, and absurdly precise about it.
+		{ label: '10° a second, but only occasionally', score: { scope: -3 } },
+		// The smug illusion-spotter, pattern-matching the famous poster instead
+		// of looking at what is in front of them.
+		{ label: 'They’re not moving', score: { risk: -1, scope: 2 } }
 	];
 
 	// Per-disc phase offsets so the nine discs don't read as copy-pasted.
@@ -70,39 +85,67 @@
 		// Alternate which direction the outermost ring drifts, checkerboard-style.
 		flip: (Math.floor(i / 3) + i) % 2 === 1,
 		// Negative animation-delay staggers each disc's creep across the 3s
-		// cycle, in a scrambled order so the motion ripples irregularly instead
+		// cycle, in a scrambled order, so the motion ripples irregularly instead
 		// of all nine discs nudging in lockstep.
 		stagger: -(((i * 5) % 9) * 0.33)
 	}));
 
-	// Piecewise-linear easing for the creep-and-hold motion, as one animation:
-	// each 3s cycle ramps 1° during its first second (a true 1°/s creep) and
-	// holds for the remaining 2s — so the 6-second reveal always catches the
-	// disc moving. A single animation keeps the accumulated angle continuous
-	// by construction — the previous version layered two synced animations (a
-	// steps() accumulator + a smooth nudge), which could land a frame apart at
-	// the cycle boundary and flash a visible 1° jolt. The loop spans 24 cycles
-	// = 24°, exactly one period of the 24°-repeating ring pattern, so wrapping
-	// back to 0° is invisible too.
-	const CYCLES = 24;
+	// Piecewise-linear easing for the creep-and-hold motion, as ONE animation:
+	// each 3s cycle ramps 10° during its first second (a true 10°/s creep) and
+	// holds for the remaining 2s. A single animation keeps the accumulated angle
+	// continuous by construction — an earlier version layered two synced
+	// animations, which could land a frame apart at the cycle boundary and flash
+	// a visible jolt.
+	//
+	// The two magic numbers are both load-bearing:
+	//
+	//   600° total — a multiple of 24°, one period of the ring pattern, so the
+	//   wrap back to 0° is invisible.
+	//
+	//   60 cycles × 3s = 180s — the reveal samples the live computed angle every
+	//   frame (see readAngle) and draws the contrail from wherever the needle was
+	//   at reveal time, which only works while that angle grows monotonically. A
+	//   short loop would reset mid-reveal and collapse the trail, so the wrap is
+	//   pushed out to once every three minutes, far outside any plausible time
+	//   spent on this question.
+	const CYCLES = 60;
+	// Each burst EASES IN AND OUT rather than snapping into motion and stopping
+	// dead. `linear()` only interpolates straight lines between its stops, so the
+	// curve is drawn explicitly: STEPS points per burst following a raised
+	// cosine, which leaves and arrives at zero velocity.
+	//
+	// Consequence worth knowing — the burst still covers 10° in 1s, so the
+	// AVERAGE is still 10°/s and "10° a second, but only occasionally" is still
+	// the right answer. But the instantaneous PEAK is now ~15.7°/s (π/2 × the
+	// average, at the midpoint of each burst). Flattening the curve further would
+	// lower the peak; removing it entirely brings back the snap.
+	const STEPS = 8;
+	const MOVE = 1 / 3; // 1s of motion per 3s cycle
 	const ease = (() => {
 		const stops = ['0'];
 		for (let i = 0; i < CYCLES; i++) {
-			const v = ((i + 1) / CYCLES).toFixed(5);
-			stops.push(`${v} ${(((i + 1 / 3) / CYCLES) * 100).toFixed(3)}%`);
-			stops.push(`${v} ${(((i + 1) / CYCLES) * 100).toFixed(3)}%`);
+			for (let k = 1; k <= STEPS; k++) {
+				const p = k / STEPS;
+				// Raised cosine: 0 → 1, with zero slope at both ends.
+				const eased = 0.5 - 0.5 * Math.cos(Math.PI * p);
+				const value = ((i + eased) / CYCLES).toFixed(5);
+				const at = (((i + MOVE * p) / CYCLES) * 100).toFixed(3);
+				stops.push(`${value} ${at}%`);
+			}
+			// …then hold this cycle's angle for the remaining two thirds.
+			stops.push(`${((i + 1) / CYCLES).toFixed(5)} ${(((i + 1) / CYCLES) * 100).toFixed(3)}%`);
 		}
 		return `linear(${stops.join(', ')})`;
 	})();
 </script>
 
-<PickList {prompt} {options} onAnswer={handleAnswer}>
+<PickList {prompt} {options} onAnswer={handleAnswer} onPick={(/** @type {number} */ i) => (pickedIndex = i)}>
 	<div class="illusion">
 		<div
 			class="board"
 			class:revealed
 			role="img"
-			aria-label="Nine circles patterned like dartboards, rotating very slowly"
+			aria-label="Nine circles patterned like dartboards, rotating in slow bursts"
 			style="--ease: {ease}"
 		>
 			{#each discs as d, i}
@@ -157,23 +200,22 @@
 	}
 	/* The rotation lives on this inner wrapper (not .disc) so the reveal's
 	   contrail overlay can sit around the disc without turning with it.
-	   72s = 24 creep-and-hold cycles of 3s; --ease (built in the script)
-	   shapes each cycle into a 1s × 1°/s glide followed by a 2s hold. The
-	   whole loop covers 24° — one period of the ring pattern — so the wrap
-	   back to 0° never shows. */
+	   180s = 60 creep-and-hold cycles of 3s; --ease (built in the script) shapes
+	   each cycle into a 1s x 10°/s glide followed by a 2s hold, covering 600° in
+	   total. See the note in the script for why both numbers are what they are. */
 	.spin {
 		position: absolute;
 		inset: 0;
-		animation: turn 72s var(--ease, linear) infinite;
+		animation: turn 180s var(--ease, linear) infinite;
 		animation-delay: var(--stagger, 0s);
 	}
 	@keyframes turn {
 		to {
-			rotate: calc(var(--dir, 1) * 24deg);
+			rotate: calc(var(--dir, 1) * 600deg);
 		}
 	}
 	/* Post-answer reveal: only the center disc survives, and its red needle
-	   turns the imperceptible creep into something you can watch happen. */
+	   makes the rotation impossible to write off as the illusion. */
 	.disc {
 		transition: opacity 0.6s ease;
 	}
@@ -196,7 +238,8 @@
 	}
 	/* Contrail: a static overlay ring just past the needle's tip. The script
 	   feeds it --a0/--sweep from the live animated angle, so a red arc grows
-	   behind the needle exactly as far as the disc has actually turned. */
+	   behind the needle exactly as far as the disc has actually turned. A
+	   conic-gradient, so any sweep up to a full 360° renders correctly. */
 	.trail {
 		position: absolute;
 		inset: -35%;

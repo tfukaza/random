@@ -1,5 +1,5 @@
-// Reads an arbitrary question out of the DOM and hands back (a) the whole thing
-// as one spoken sentence and (b) a way to answer it with a single number.
+// Reads an arbitrary question's authored prose and choices out of the DOM for
+// the impatient presentation. The actual controls and visuals stay in place.
 //
 // This exists because PatienceLens is content-agnostic — it holds an opaque
 // snippet, not a question object, and questions share no schema. So the only
@@ -68,6 +68,56 @@ function words(s, tone = 'body') {
 		else out.push({ w, tone });
 	}
 	return out;
+}
+
+/**
+ * Build the impatient reader script without taking over the answer UI. Authored
+ * prose opts in through SplitText or data-reader-text; real controls publish
+ * their stable spoken label through data-reader-option.
+ * @param {HTMLElement} host
+ */
+export function readPresentation(host) {
+	const prose = [...host.querySelectorAll('span.split, [data-reader-text], .premise, .statement, .hint, h1, h2, [role="math"][aria-label], svg[role="img"][aria-label]')]
+		.map(label)
+		.filter(Boolean)
+		.filter((text, index, all) => index === 0 || text !== all[index - 1]);
+	const options = [...host.querySelectorAll('[data-reader-option]')]
+		.map((element) => clean(element.getAttribute('data-reader-option')))
+		.filter(Boolean);
+	[...host.querySelectorAll('[data-reader-option]')].forEach((element, index) => {
+		const number = String(index + 1);
+		element.setAttribute('data-reader-number', number);
+		for (const target of element.querySelectorAll('[data-reader-svg-label]')) {
+			if (!target.hasAttribute('data-reader-original-label')) {
+				target.setAttribute('data-reader-original-label', target.textContent ?? '');
+			}
+			target.textContent = number;
+		}
+	});
+	if (!prose.length && !options.length) return null;
+
+	const optionSentences = options.map((text, index) => `${index + 1}. ${text}.`);
+	const lead = options.length ? 'Your choices are.' : '';
+	const sections = [...prose, ...(lead ? [lead] : []), ...optionSentences];
+	/** @type {Token[]} */
+	const tokens = [...prose.flatMap((text) => words(text))];
+	if (lead) tokens.push(...words(lead));
+	options.forEach((text, index) => {
+		tokens.push({ w: `${spell(index + 1)}.`, tone: 'num', hold: 3 });
+		tokens.push(...words(`${text}.`));
+	});
+	return { tokens, sentence: sections.join(' ') };
+}
+
+/** @param {HTMLElement} host */
+export function clearPresentationOptions(host) {
+	for (const element of host.querySelectorAll('[data-reader-number]')) {
+		element.removeAttribute('data-reader-number');
+	}
+	for (const target of host.querySelectorAll('[data-reader-original-label]')) {
+		target.textContent = target.getAttribute('data-reader-original-label') ?? '';
+		target.removeAttribute('data-reader-original-label');
+	}
 }
 
 /**

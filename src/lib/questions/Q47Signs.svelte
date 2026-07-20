@@ -3,7 +3,8 @@
 	// elevator as its doors start closing on somebody running for it. The only
 	// meaningful affordances are the real door controls on the panel.
 	import { onMount } from 'svelte';
-	import { clearMusicDuck, duckMusic, playSfx, stopSfx } from '$lib/audio/audio.svelte.js';
+	import { audio, audioState } from '$lib/audio/audio.svelte.js';
+	import { deliveryState, recordDraft } from '$lib/questions/metrics.svelte.js';
 
 	let { onAnswer } = $props();
 
@@ -15,15 +16,96 @@
 	);
 	let litFloors = $state(/** @type {Set<number>} */ (new Set()));
 	let announcement = $state('');
+	/** @type {HTMLDivElement | undefined} */
+	let elevatorElement;
 
 	/** @type {ReturnType<typeof setTimeout> | undefined} */
-	let deadline;
-	/** @type {ReturnType<typeof setTimeout> | undefined} */
-	let advanceTimer;
+	let sceneTimer;
 	/** @type {number | undefined} */
 	let startFrame;
+	let timerDeadline = 0;
+	let timerRemaining = 0;
+	/** @type {(() => void) | null} */
+	let timerCallback = null;
+	let scenePaused = $state(false);
+	/** @type {Set<Animation>} */
+	const pausedAnimations = new Set();
+	/** @type {ReturnType<typeof audio.sfx.createScope> | null} */
+	let sceneSounds = null;
+	let syncSceneClock = () => {};
 
-	const active = $derived(phase === 'closing');
+	const active = $derived(phase === 'closing' && !scenePaused);
+
+	$effect(() => {
+		// Reading both fields makes interruption and user-preference changes part
+		// of the same clock that visibility changes drive.
+		audioState.enabled;
+		audioState.status;
+		deliveryState.locked;
+		syncSceneClock();
+	});
+
+	function clockIsBlocked() {
+		return (
+			document.hidden ||
+			deliveryState.locked ||
+			(audioState.enabled &&
+				['locked', 'loading', 'interrupted', 'recoverable'].includes(audioState.status))
+		);
+	}
+
+	function cancelSceneTimer() {
+		clearTimeout(sceneTimer);
+		sceneTimer = undefined;
+		timerCallback = null;
+		timerDeadline = 0;
+		timerRemaining = 0;
+	}
+
+	function pauseSceneTimer() {
+		if (sceneTimer !== undefined) {
+			timerRemaining = Math.max(0, timerDeadline - performance.now());
+			clearTimeout(sceneTimer);
+			sceneTimer = undefined;
+		}
+	}
+
+	function resumeSceneTimer() {
+		if (sceneTimer !== undefined || !timerCallback || clockIsBlocked()) return;
+		const callback = timerCallback;
+		timerDeadline = performance.now() + timerRemaining;
+		sceneTimer = setTimeout(() => {
+			sceneTimer = undefined;
+			timerCallback = null;
+			timerDeadline = 0;
+			timerRemaining = 0;
+			callback();
+		}, timerRemaining);
+	}
+
+	/** @param {() => void} callback @param {number} duration */
+	function setSceneTimer(callback, duration) {
+		cancelSceneTimer();
+		timerCallback = callback;
+		timerRemaining = duration;
+		resumeSceneTimer();
+	}
+
+	function pauseSceneAnimations() {
+		if (!elevatorElement) return;
+		for (const animation of elevatorElement.getAnimations({ subtree: true })) {
+			if (animation.playState !== 'running') continue;
+			animation.pause();
+			pausedAnimations.add(animation);
+		}
+	}
+
+	function resumeSceneAnimations() {
+		for (const animation of pausedAnimations) {
+			if (animation.playState === 'paused') animation.play();
+		}
+		pausedAnimations.clear();
+	}
 
 	/**
 	 * Resolve once. Whichever arrives first — a button or the six-second
@@ -32,29 +114,33 @@
 	 */
 	function resolve(outcome) {
 		if (!active) return;
-		clearTimeout(deadline);
+		cancelSceneTimer();
 		phase = outcome;
-		stopSfx('elevator-scene');
+		recordDraft({ format: 'scene-action', value: outcome, label: outcome });
+		sceneSounds?.stop();
+		// Door controls intentionally layer their physical button click with the
+		// resulting door mechanism; both belong to this scene scope.
+		if (outcome !== 'timed-out') void sceneSounds?.play('elevator-button');
 
 		if (outcome === 'saved') {
-			void playSfx('elevator-open');
+			void sceneSounds?.play('elevator-open');
 			announcement = 'The doors reopen and the person makes the elevator.';
-			advanceTimer = setTimeout(
+			setSceneTimer(
 				() => onAnswer({ social: 2, coord: 1, risk: 1, tempo: 2 }),
 				1000
 			);
 		} else if (outcome === 'closed') {
-			void playSfx('elevator-shut');
+			void sceneSounds?.play('elevator-shut');
 			announcement = 'The close-door button is pressed. The doors shut.';
-			advanceTimer = setTimeout(
+			setSceneTimer(
 				() => onAnswer({ social: -3, tempo: 2, coord: -1 }),
 				700
 			);
 		} else {
-			void playSfx('elevator-shut');
+			void sceneSounds?.play('elevator-shut');
 			// Freezing until the deadline decides for you is its own answer.
 			announcement = 'The doors shut before the person reaches the elevator.';
-			advanceTimer = setTimeout(
+			setSceneTimer(
 				() => onAnswer({ risk: -2, tempo: -2, social: -1 }),
 				700
 			);
@@ -67,30 +153,64 @@
 		const next = new Set(litFloors);
 		next.has(floor) ? next.delete(floor) : next.add(floor);
 		litFloors = next;
+		void sceneSounds?.play('elevator-button');
 	}
 
 	onMount(() => {
-		duckMusic('elevator', 0.22);
-		void playSfx('elevator-approach', { tag: 'elevator-scene' });
+		sceneSounds = audio.sfx.createScope('elevator');
+		const releaseDuck = audio.music.duck('elevator', 0.22);
+
+		function beginScene() {
+			if (phase !== 'ready' || clockIsBlocked()) return;
+			phase = 'closing';
+			announcement = 'Elevator doors are closing. A person is running toward the elevator.';
+			void sceneSounds?.play('elevator-approach');
+			setSceneTimer(() => resolve('timed-out'), DOOR_MS);
+		}
+
+		syncSceneClock = () => {
+			if (clockIsBlocked()) {
+				if (!scenePaused) {
+					scenePaused = true;
+					pauseSceneTimer();
+					pauseSceneAnimations();
+				}
+				return;
+			}
+			if (scenePaused) {
+				scenePaused = false;
+				resumeSceneAnimations();
+				resumeSceneTimer();
+			}
+			if (phase === 'ready') beginScene();
+		};
+		const visibilityChanged = () => syncSceneClock();
+		document.addEventListener('visibilitychange', visibilityChanged);
+
 		// Wait one painted frame so CSS has an open-door starting position to
 		// transition from. The decision window begins exactly when motion begins.
 		startFrame = requestAnimationFrame(() => {
-			phase = 'closing';
-			announcement = 'Elevator doors are closing. A person is running toward the elevator.';
-			deadline = setTimeout(() => resolve('timed-out'), DOOR_MS);
+			syncSceneClock();
+			// If an interruption landed in the same frame as the phase change, pause
+			// the newly-created CSS transitions on the following paint too.
+			if (scenePaused) startFrame = requestAnimationFrame(pauseSceneAnimations);
 		});
 
 		return () => {
-			stopSfx('elevator-scene');
-			clearMusicDuck('elevator');
+			document.removeEventListener('visibilitychange', visibilityChanged);
+			syncSceneClock = () => {};
+			sceneSounds?.dispose();
+			sceneSounds = null;
+			releaseDuck();
 			if (startFrame !== undefined) cancelAnimationFrame(startFrame);
-			clearTimeout(deadline);
-			clearTimeout(advanceTimer);
+			cancelSceneTimer();
+			pausedAnimations.clear();
 		};
 	});
 </script>
 
 <div
+	bind:this={elevatorElement}
 	class="elevator"
 	class:closing={phase === 'closing'}
 	class:saved={phase === 'saved'}
@@ -98,7 +218,7 @@
 	class:timed-out={phase === 'timed-out'}
 	aria-describedby="elevator-scene"
 >
-	<p id="elevator-scene" class="sr-only">
+	<p id="elevator-scene" class="sr-only" data-reader-text>
 		You are inside an elevator looking through its open doors. A person is running toward you as
 		the doors begin to close. The control panel is to the right.
 	</p>
@@ -125,20 +245,24 @@
 		<div class="door-controls">
 			<button
 				class="door-button open-button"
-				data-sfx="elevator-button"
+				data-sfx="none"
 				class:lit={phase === 'saved'}
 				disabled={!active}
 				aria-label="Hold elevator door open"
+				data-reader-option="Hold the elevator door open"
+				data-answer-id="open"
 				onclick={() => resolve('saved')}
 			>
 				<span aria-hidden="true">◀&nbsp;▶</span>
 			</button>
 			<button
 				class="door-button close-button"
-				data-sfx="elevator-button"
+				data-sfx="none"
 				class:lit={phase === 'closed'}
 				disabled={!active}
 				aria-label="Close elevator door"
+				data-reader-option="Close the elevator door"
+				data-answer-id="close"
 				onclick={() => resolve('closed')}
 			>
 				<span aria-hidden="true">▶&nbsp;◀</span>
@@ -148,7 +272,7 @@
 		<div class="floor-buttons" role="group" aria-label="Floor buttons">
 			{#each FLOORS as floorNumber}
 				<button
-					data-sfx="elevator-button"
+					data-sfx="none"
 					class:lit={litFloors.has(floorNumber)}
 					disabled={!active}
 					aria-pressed={litFloors.has(floorNumber)}

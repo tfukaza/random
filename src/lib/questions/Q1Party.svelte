@@ -1,8 +1,6 @@
 <script>
-	// Q1 — normal opener. Logs its pick index: Q41's reprise scores consistency
-	// against it (options correspond by position).
+	// Q1 — normal opener.
 	import PickList from './PickList.svelte';
-	import { logAnswer } from './ledger.svelte.js';
 	let { onAnswer } = $props();
 
 	const prompt = "At a party, you're most likely to be…";
@@ -14,4 +12,4 @@
 	];
 </script>
 
-<PickList {prompt} {options} {onAnswer} onPick={(/** @type {number} */ i) => logAnswer('q1', { index: i })} />
+<PickList {prompt} {options} {onAnswer} />

@@ -1,6 +1,48 @@
 const TARGET_COUNT = 17;
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 export const DAMAGE_RADIUS_RADIANS = (40 * Math.PI) / 180;
+export const ASTEROID_SCORE_MS = 30_000;
+
+const IMPACT_WINDOWS = Object.freeze({
+	1: { ms: 5_000, phrase: 'five seconds' },
+	2: { ms: 10_000, phrase: 'ten seconds' },
+	3: { ms: 20_000, phrase: 'twenty seconds' },
+	7: { ms: 5 * 60_000, phrase: 'five minutes' }
+});
+
+/** @param {number | null | undefined} patienceValue */
+export function impactWindow(patienceValue) {
+	return (
+		IMPACT_WINDOWS[/** @type {keyof typeof IMPACT_WINDOWS} */ (patienceValue)] ?? {
+			ms: 30_000,
+			phrase: 'thirty seconds'
+		}
+	);
+}
+
+/** @param {number | null | undefined} patienceValue @param {number} [playbackRate] */
+export function asteroidMusicDelayMs(patienceValue, playbackRate = 1) {
+	const rate = Math.max(0.01, Number(playbackRate) || 1);
+	return Math.max(0, impactWindow(patienceValue).ms - ASTEROID_SCORE_MS / rate);
+}
+
+/**
+ * Return the finite score offset aligned to the scene deadline, or null while
+ * a scene longer than the score is intentionally waiting for its final 30s.
+ * @param {number | null | undefined} patienceValue
+ * @param {number} [elapsedSeconds]
+ * @param {number} [playbackRate]
+ */
+export function asteroidMusicOffset(patienceValue, elapsedSeconds = 0, playbackRate = 1) {
+	const sceneMs = impactWindow(patienceValue).ms;
+	const rate = Math.max(0.01, Number(playbackRate) || 1);
+	const elapsedMs = Math.max(0, Number(elapsedSeconds) * 1000 || 0);
+	const delayMs = Math.max(0, sceneMs - ASTEROID_SCORE_MS / rate);
+	if (elapsedMs < delayMs) return null;
+	return (
+		Math.max(0, ASTEROID_SCORE_MS - sceneMs * rate) + (elapsedMs - delayMs) * rate
+	) / 1000;
+}
 
 /** @typedef {'land' | 'ocean'} Surface */
 /** @typedef {{ id: string, label: string, description: string, surface: Surface, penalty: Record<string, number> }} TargetDefinition */

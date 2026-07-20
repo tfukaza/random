@@ -1,6 +1,13 @@
-// Single source of truth for the fonts offered in Q16 and reused when styling
-// Q19 based on the Q16 answer. `css` is a ready-to-use font-family value; the
-// underlying webfonts are loaded in app.html.
+// Single source of truth for the fonts offered in font-taste and reused when
+// styling artistic-claim from that answer. `css` is a ready-to-use font-family
+// value; the underlying webfonts are loaded in app.html.
+//
+// `lora` is THIS QUIZ'S OWN body face, offered deliberately: the taker is
+// designing a personality quiz, and one of the fonts on the list is the one
+// they are reading the question in. Nothing marks it. See also the matching
+// palette in palettes.js, `simple` in buttons.js, and `plain` in
+// wallpaper-taste — between them, the exact design of this quiz is a
+// reachable answer.
 export const FONTS = [
 	{ id: 'poppins', label: 'Poppins', css: "'Poppins', sans-serif" },
 	{ id: 'playfair', label: 'Playfair Display', css: "'Playfair Display', serif" },
@@ -12,6 +19,10 @@ export const FONTS = [
 		label: 'Yomogi',
 		css: "'Yomogi', 'Comic Sans MS', 'Comic Sans', system-ui, sans-serif"
 	},
+	// Already loaded in app.html — it is what you are reading right now. Kept
+	// well away from Playfair: stacked adjacently, two high-quality serifs read
+	// as a rendering bug rather than as two options.
+	{ id: 'lora', label: 'Lora', css: "'Lora', Georgia, 'Times New Roman', serif" },
 	{ id: 'bitcount', label: 'Bitcount Single', css: "'Bitcount Single', system-ui" },
 	{ id: 'plexmono', label: 'IBM Plex Mono', css: "'IBM Plex Mono', monospace" }
 ];

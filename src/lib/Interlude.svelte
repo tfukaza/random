@@ -5,7 +5,12 @@
 	import SplitText from '$lib/SplitText.svelte';
 	import { playSfx } from '$lib/audio/audio.svelte.js';
 
-	let { message, onNext } = $props();
+	// `detail` is an optional smaller paragraph under the headline, for the rare
+	// interlude that has to explain something rather than just breathe. `eyebrow`
+	// overrides the "Interlude" label — the opening one is not an interlude
+	// between anything, so calling it one would be a small lie on the first
+	// screen the taker ever reads.
+	let { message, onNext, detail = '', eyebrow = 'Interlude' } = $props();
 
 	onMount(() => {
 		void playSfx('page-turn');
@@ -13,13 +18,16 @@
 </script>
 
 <div class="interlude">
-	<p class="eyebrow">Interlude</p>
+	<p class="eyebrow" data-reader-text>{eyebrow}</p>
 	<div class="fleuron" aria-hidden="true">
 		<hr class="rule" />
 		<span>❦</span>
 		<hr class="rule" />
 	</div>
 	<h2><SplitText text={message} delay={250} stagger={30} /></h2>
+	{#if detail}
+		<p class="detail" data-reader-text>{detail}</p>
+	{/if}
 	<button class="continue" onclick={onNext}><span class="continue-label">Continue</span></button>
 </div>
 
@@ -59,6 +67,14 @@
 		font-weight: 600;
 		line-height: 1.25;
 		margin: 0 0 2.5rem;
+	}
+	.detail {
+		max-width: 30rem;
+		margin: -1.5rem auto 2.5rem;
+		font-size: 0.95rem;
+		line-height: 1.65;
+		color: var(--muted);
+		animation: rise 0.5s 0.8s both;
 	}
 	.continue {
 		position: relative;

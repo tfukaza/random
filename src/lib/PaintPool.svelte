@@ -1,6 +1,10 @@
 <script>
-	// A pool spreading out from underneath the stack of paper, after the taker
-	// stashes a weapon under it in Q53.
+	// Paint spreading out from underneath the stack of paper, after the taker
+	// shoves a wet brush under it in hide-brush.
+	//
+	// It is PERMANENT. Nothing clears it for the rest of the run — not the next
+	// interlude, not the result screen — because a stain you can outrun is not a
+	// consequence. Only starting the quiz over resets it.
 	//
 	// The whole point is that it is NOT on the card — it is on the desk, under
 	// the papers. So this is mounted as the FIRST child of `.stage`, before the
@@ -88,22 +92,27 @@
 	const shape = $derived.by(() => {
 		if (!w || !h) return null;
 		const rnd = mulberry32(seed);
-		// Centred a little above the bottom edge, so at small scale the pool is
-		// still entirely hidden under the stack and has to grow to be seen.
-		const cx = w;
-		const cy = h * 0.9;
+		// Anchored to the stage's TOP-LEFT corner in fixed pixels, not to a
+		// fraction of the box. The stage occupies x ∈ [w/2, 3w/2] of this
+		// doubled viewBox and y ∈ [0, h], so (w/2, 0) is the card's top-left —
+		// and offsetting from there by constants means resizing the window
+		// moves the card without dragging the stain along with it.
+		const INSET_X = 70;
+		const INSET_Y = 60;
+		const cx = w / 2 + INSET_X;
+		const cy = INSET_Y;
 		// One pool only — the irregular outline does the work, a second overlapping
 		// lobe just read as two puddles.
-		const main = blob(cx, cy, w * 0.42, h * 0.17, rnd);
+		const main = blob(cx, cy, 215, 145, rnd);
 		const spots = Array.from({ length: 5 }, () => {
 			const a = rnd() * Math.PI * 2;
 			const dist = 0.5 + rnd() * 0.55;
 			return {
 				d: blob(
-					cx + Math.cos(a) * w * 0.5 * dist,
-					cy + Math.abs(Math.sin(a)) * h * 0.22 * dist,
-					w * (0.012 + rnd() * 0.03),
-					h * (0.006 + rnd() * 0.015),
+					cx + Math.cos(a) * 250 * dist,
+					cy + Math.sin(a) * 170 * dist,
+					8 + rnd() * 22,
+					6 + rnd() * 16,
 					rnd
 				),
 				delay: 0.35 + rnd() * 0.5
@@ -186,17 +195,17 @@
 		>
 			<defs>
 				<!-- <defs> ids are global; prefix everything. -->
-				<filter id="bloodpool-edge" x="-20%" y="-20%" width="140%" height="140%">
+				<filter id="paintpool-edge" x="-20%" y="-20%" width="140%" height="140%">
 					<feTurbulence type="fractalNoise" baseFrequency="0.03" numOctaves="2" seed="11" result="n" />
 					<feDisplacementMap in="SourceGraphic" in2="n" scale="7" xChannelSelector="R" yChannelSelector="G" />
 				</filter>
-				<radialGradient id="bloodpool-sheen" cx="0.42" cy="0.34" r="0.5">
-					<stop offset="0" stop-color="#b31c20" stop-opacity="0.55" />
-					<stop offset="1" stop-color="#b31c20" stop-opacity="0" />
+				<radialGradient id="paintpool-sheen" cx="0.42" cy="0.34" r="0.5">
+					<stop offset="0" stop-color="#ffa245" stop-opacity="0.55" />
+					<stop offset="1" stop-color="#ffa245" stop-opacity="0" />
 				</radialGradient>
 			</defs>
 
-			<g class="spread" filter="url(#bloodpool-edge)">
+			<g class="spread" filter="url(#paintpool-edge)">
 				<path class="body" d={shape.main} />
 				<!-- A wet highlight, so it reads as liquid rather than as a flat decal. -->
 				<path class="sheen" d={shape.main} />
@@ -212,7 +221,7 @@
 
 {#if import.meta.env.DEV}
 	<aside class="pool-debug">
-		<p class="pd-title">🩸 pool · dev only</p>
+		<p class="pd-title">🎨 paint · dev only</p>
 		<p class="pd-note">t = {(elapsed / 1000).toFixed(1)}s</p>
 		<div class="pd-row">
 			{#each [['0', 0], ['10', 10], ['26', 26], ['50', 50], ['92', 92]] as [label, at]}
@@ -260,10 +269,10 @@
 		transition: none;
 	}
 	.body {
-		fill: #7d0f13;
+		fill: #e2680f;
 	}
 	.sheen {
-		fill: url(#bloodpool-sheen);
+		fill: url(#paintpool-sheen);
 	}
 	.spots {
 		opacity: var(--spots);

@@ -8,6 +8,7 @@
 	import SplitText from '$lib/SplitText.svelte';
 	import { textMs } from '$lib/reveal.js';
 	import { playSfx } from '$lib/audio/audio.svelte.js';
+	import { recordDraft } from '$lib/questions/metrics.svelte.js';
 
 	let { onAnswer } = $props();
 
@@ -25,6 +26,7 @@
 		if (done) return;
 		done = true;
 		status = verdict;
+		recordDraft({ format: 'browser-permission', value: verdict, label: verdict });
 		void playSfx('ui-confirm', { rate: verdict === 'denied' ? 0.88 : 1 });
 		setTimeout(() => onAnswer(score), 1000);
 	}

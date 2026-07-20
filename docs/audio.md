@@ -1,56 +1,181 @@
 # Quiz audio
 
-Generated with ElevenLabs on 2026-07-18 for this project.
+The quiz uses one intent-driven Web Audio engine for music, sound effects and
+the procedural fast-reader tick. Howler and `HTMLAudioElement` are deliberately
+not used: the authored patience modes require exact one-third and five-times
+playback, and using two playback systems makes interruption recovery capable of
+creating duplicate music.
 
-## Music
+## Runtime contract
 
-- `static/audio/music/puzzle-chamber-loop.mp3`
-- ElevenLabs Music v2, seed `471105`, 90 seconds, stereo 48 kHz MP3.
-- Direction: an original seamless chamber-puzzle loop at 92 BPM with pizzicato strings,
-  celesta, clarinet, bassoon, restrained clockwork percussion, paper and wood textures,
-  no vocals, no climax, and no conclusive ending.
-- `static/audio/music/asteroid-countdown.mp3`
-- ElevenLabs Music v2, seed `5047`, 30 seconds, 192 kbps MP3. Its chamber suspense
-  arc is timed to Q50's countdown and withdraws into near-silence for the final three
-  seconds so the separately mixed explosion owns the impact.
-- `static/audio/music/final-report-loop.mp3`
-- ElevenLabs Music v2, seed `12854`, 45 seconds, 192 kbps MP3. A warm, quiet,
-  loopable chamber-certificate theme used only for the final report.
+`src/lib/audio/audio.svelte.js` is the Svelte-facing facade. Its coordinator
+records the complete desired music intent synchronously before it performs any
+asynchronous resume, fetch or decode work. Each intent gets a monotonically
+increasing revision; work from an older revision may fill a cache but may never
+start a source or change public state.
 
-The music files were remastered once after generation so Howler never needs a runtime
-volume above `1`. The default loop has its maximum patient-mode gain (`1.12 × 1.5`)
-and -3 dB safety ceiling baked in; Howler plays that file at `0.667` normally, `1.0`
-at one-third speed, and `0.48` at 5× speed. The asteroid and report tracks have their
-previous `1.28` and `0.768` gains baked in and always play at their authored rate.
-Changes between patience playback rates use a one-second exponential pitch glide, matching
-the record-like wind-down of the original Web Audio implementation instead of stepping
-instantly between rates.
+The supported facade is:
 
-## Sound effects
+```js
+audio.activateFromGesture();
+audio.recoverFromGesture();
+audio.setEnabled(enabled);
+audio.prepareMusic(track);
 
-The files in `static/audio/sfx/` were generated with ElevenLabs Sound Effects as 44.1 kHz,
-128 kbps MP3s. Prompts requested dry, restrained, voiceless sounds in a paper, wood,
-celesta, and chamber-game palette.
+audio.music.play(track, { cueKey, rate, startOffset, restart, transition });
+audio.music.stop({ transition });
+audio.music.setRate(rate, { rampMs });
+audio.music.duck(owner, gain); // returns an idempotent release function
 
-- Core UI: tap, toggle, confirmation, slider detent, drag pickup, valid/invalid drop.
-- Transitions: page turn and result reveal.
-- Scenes: chat send, illusion reveal, balance scale, elevator button/approach/open/shut,
-  and asteroid warning/approach/impact.
+audio.sfx.play(id, { volume, rate, tag, maxLatencyMs });
+audio.sfx.stop(tag);
+audio.sfx.createScope(name);
+audio.suspend();
+audio.resume();
+audio.dispose();
+```
 
-The source files were measured in 10 ms PCM windows and their former runtime trims were
-baked into the MP3s: UI tap `0.3`, toggle `0.47`, confirm `3.4`, slider `0.49`, pickup
-`0.52`, valid/invalid drop `0.75`/`0.78`, page turn `2.5`, chat send `7`, illusion
-`1.12`, balance `0.88`, elevator button/approach/open/shut `0.84`/`0.651`/`0.133`/
-`0.385`, asteroid warning/approach/impact `0.81`/`0.44`/`0.71`, and result reveal
-`1.9`. The warning's baked `0.81` includes its authored 3× final-countdown emphasis.
-Per-play runtime volume is now only an attenuation in Howler's `0–1` range.
+`music.play()` starts or switches music. Repeating the same cue key is
+idempotent; a new cue key (or `restart: true`) starts a new instance. The
+returned request resolves `whenStarted` with `playing`, `silent`,
+`superseded`, or `failed`, so a timed scene can wait for its own cue instead of
+inferring readiness from a global track name.
 
-The fast RSVP reader uses a procedural 18 ms sine-wave "dit" per displayed word. It is
-generated on Howler's unlocked Web Audio clock instead of loaded from a file so it remains
-tightly synchronized at 1,500 WPM and does not overlap its own tail. Its 0.036 peak gain
-keeps it audible over the deliberately accelerated background score.
+Public status is one of `idle`, `locked`, `loading`, `playing`, `silent`,
+`interrupted`, `recoverable`, or `error`. `requestedTrack` describes intent;
+`activeTrack` describes the source the transport actually owns. The UI must
+never call a source "ready" merely because `start()` was requested.
 
-Runtime playback uses Howler.js 2.2.4. Howler owns mobile audio unlocking, Web Audio/HTML5
-fallback, decoded-buffer caching, sound pools, and automatic context suspension. The quiz
-still begins playback from the explicit Begin gesture required by browser autoplay policy;
-later pointer or keyboard gestures resume an audio context interrupted by iOS.
+### One-voice invariant
+
+There may be zero or one audible music source in a document. Switching uses an
+exclusive 140 ms handoff:
+
+1. Fetch and decode the replacement.
+2. Fade the current source to zero, stop it, and disconnect it.
+3. Start and fade in the replacement.
+
+There is no crossfade. Live sources, fade timers and natural-end callbacks are
+owned and cleaned up by the transport; asynchronous coordinator work is
+revision-checked before it may change playback. Fetches and decodes are
+cache-owned, so obsolete work may still populate a reusable cache but may never
+start a stale source. Explicit silence is its own intent, not a side effect of
+marking an old track complete. A failed replacement stops music that no longer
+belongs to the scene, keeps the quiz usable, and changes the sound control to a
+visible **Retry sound** action.
+
+Music rate modes are `slow` (1/3), `normal` (1), and `fast` (5). Only the
+default score is rate-sensitive. Changes use a one-second exponential ramp
+with an exact endpoint; an in-progress ramp is held at its instantaneous value
+before a reversal so fast-to-normal and slow-to-normal cannot jump or retain
+stale automation.
+
+## Authored cue sheet
+
+| Quiz state | Music intent | Other audio |
+| --- | --- | --- |
+| Intro | Explicit silence; no context yet | Begin activates audio and plays `ui-confirm` |
+| Ordinary questions and interludes | Default loop at the current patience rate | UI and question cues |
+| Elevator | Default loop ducked to 22% | Scoped approach, button and door-result cues |
+| Asteroid | Finite asteroid cue at 1x | Warnings, approach and impact |
+| Final “Take a breath” interlude | Explicit music silence | Page turn and Continue confirmation remain |
+| Result | Report loop at 1x | Result reveal |
+| Take it again | New-run default cue at 1x | Confirmation |
+
+Global music policy belongs to the quiz orchestrator. Question and result
+components do not choose global tracks. Scene components may own scoped sound
+effects and duck leases; destroying a scope cancels both pending and active
+cues. Custom button cues suppress the generic tap unless layering is explicitly
+part of the cue sheet. The elevator button plus door result and result reveal
+plus report music are intentional layers.
+
+The elevator and asteroid use pausable scene time. Hiding the page, locking the
+device, or receiving an audio interruption pauses the decision clock and audio
+together. The asteroid's finite score is aligned to every authored deadline:
+the 5, 10 and 20-second variants enter at the matching point in the score, the
+30-second variant begins at zero, and the 30-minute variant is intentionally
+silent until its final 30 seconds. A late sound enable joins the same aligned
+timeline. A naturally ended finite cue is not restarted by visibility recovery.
+
+## Platform lifecycle and recovery
+
+The engine feature-detects `navigator.audioSession`, requests the `playback`
+category, and then creates/resumes its sole `AudioContext` from Begin, sound
+enable, restore, or another trusted gesture. It observes context state,
+Audio Session state, visibility, `pagehide`, and `pageshow`, including Safari's
+`interrupted` state.
+
+Normal foreground recovery first resumes the existing context and briefly
+checks that its audio clock is genuinely advancing, rather than trusting a
+nominal `running` state. If that fails, the sound control becomes **Restore
+sound**. That user action stops and disconnects the old graph, initiates its
+close, and creates/resumes one replacement before the trusted gesture expires;
+the current cue is then reconciled on that graph. The engine never starts a
+hidden HTML-media fallback, because JavaScript cannot prove whether a nominally
+running path is physically audible and a speculative fallback could produce
+the exact duplicate playback this system forbids.
+
+Muted sources keep their scene time so unmuting stays synchronized. A cue that
+was never started because sound was disabled may join a finite scene at its
+elapsed offset. Fetch, resume, suspend, close and decode operations are bounded,
+so a Safari platform promise cannot leave a scene in `loading` forever.
+Interruption and stalled-clock failures offer **Restore sound**; asset, decode,
+start and transport failures offer **Retry sound**. Their detailed categories
+remain available in development traces.
+
+## Assets and memory
+
+The music files were generated with ElevenLabs on 2026-07-18:
+
+- `puzzle-chamber-loop.mp3`: 90-second looping default score, rate-sensitive.
+- `asteroid-countdown.mp3`: 30-second finite countdown with a quiet final tail.
+- `final-report-loop.mp3`: 45-second looping report score.
+
+The default file is mastered for gain `0.667` at normal speed, `1` slow and
+`0.48` fast. Asteroid and report play at gain `1`; scene ducks are applied on
+top. Music goes through a limiter before the master bus, while SFX connect to a
+separate bus.
+
+When sound is enabled on the intro, the app may prefetch compressed bytes for
+the default score and core UI cues without creating an audio context. After
+activation it prefetches remaining compressed assets. Only current/upcoming
+music is decoded; obsolete music buffers are evicted rather than retaining all
+three decoded tracks on memory-constrained iPhones. Short SFX are cached, UI
+cues that miss their latency window are dropped rather than played late, and
+high-frequency effects have explicit voice caps.
+
+## Verification
+
+The automated coordinator suite covers hanging obsolete loads, immediate stop,
+rapid A→B→A intent changes, same-cue idempotence, rate-only updates,
+mute/unmute without a restart, exclusive handoff, stale scoped handles, finite
+natural end, pending-request recovery, transport failures and an out-of-order
+suspend/resume race. Transport and mix tests cover the one-live-source
+invariant, finite offsets, stale `onended` callbacks, scoped/tagged SFX,
+AudioSession state handling, bounded resume/decode, advancing-clock detection,
+recovery preloading, graph-construction rollback, rate-ramp preservation and
+deterministic disposal. A separate scene-timing test covers every asteroid
+deadline and late-start offset.
+
+Playwright smoke tests run in desktop Chromium, Firefox and WebKit plus emulated
+Android Chrome and Mobile Safari viewports. They verify that every registered
+asset is served, Begin reaches an active default source, mute/unmute does not
+start another source, a same-document report switch and stop settle correctly,
+the asteroid reaches an active source, final-breath silence is explicit, and
+Restore creates one replacement context and returns to active playback. Browser
+emulation cannot prove that a physical device speaker
+produced sound, so a release still needs an audible pass on physical iPhone and
+iPad hardware spanning the newest and oldest supported iOS/iPadOS versions:
+
+- Silent switch on and off; sound initially on and initially off.
+- Begin, mute/unmute, and the visible restore action.
+- Fast, slow, escape-hatch and return-to-normal transitions.
+- Elevator duck/cue cleanup and backgrounding during its deadline.
+- Asteroid start, warnings, impact, late sound enable, and final silence.
+- Result music and Take it again.
+- Tab/app background and foreground, screen lock/unlock, and an interruption
+  such as Siri or an incoming call.
+
+The supported matrix is current Chrome, Edge, Firefox, Safari and Android
+Chrome plus the current and previous two major iOS/iPadOS Safari releases. The
+guarantee is per document; separate quiz tabs remain independent.

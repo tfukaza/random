@@ -1,14 +1,29 @@
 <script>
-	import { audioState, playSfx, resumeAudio, startAudio, suspendAudio } from './audio.svelte.js';
+	import { audio, audioState } from './audio.svelte.js';
 
 	let { active = false } = $props();
 
 	const rangeTimes = new WeakMap();
 	const rangeValues = new WeakMap();
 
-	function unlock() {
+	/** @param {PointerEvent | KeyboardEvent} event */
+	function unlock(event) {
 		if (!active || !audioState.enabled) return;
-		audioState.started ? resumeAudio() : startAudio();
+		// Once the graph is running, ordinary quiz gestures must not push the
+		// coordinator back through `loading`. Timed scenes treat that state as a
+		// real interruption, so an unconditional unlock would pause every drag,
+		// key press and elevator-button tap.
+		if (audioState.started && audioState.status !== 'locked') return;
+		if (
+			['interrupted', 'recoverable'].includes(audioState.status) ||
+			(audioState.status === 'error' && audioState.errorCategory === 'context-recovery')
+		)
+			return;
+		const target = event.target instanceof Element ? event.target : null;
+		// The restore control owns graph reconstruction. Resuming during its
+		// pointerdown can change the button into "Mute" before the ensuing click.
+		if (target?.closest('.sound-control.needs-restore')) return;
+		void audio.activateFromGesture();
 	}
 
 	/** @param {MouseEvent} event */
@@ -21,7 +36,7 @@
 		const action = button.matches('.next, .submit, .continue, .start, .leave, .ink-button')
 			? 'ui-confirm'
 			: 'ui-tap';
-		void playSfx(/** @type {any} */ (requested || action));
+		audio.sfx.play(/** @type {any} */ (requested || action));
 	}
 
 	/** @param {Event} event */
@@ -29,7 +44,7 @@
 		const input = /** @type {HTMLInputElement | null} */ (
 			event.target instanceof HTMLInputElement ? event.target : null
 		);
-		if (input && (input.type === 'checkbox' || input.type === 'radio')) void playSfx('ui-toggle');
+		if (input && (input.type === 'checkbox' || input.type === 'radio')) audio.sfx.play('ui-toggle');
 	}
 
 	/** @param {Event} event */
@@ -42,11 +57,21 @@
 		if (rangeValues.get(slider) === slider.value || now - (rangeTimes.get(slider) ?? 0) < 55) return;
 		rangeValues.set(slider, slider.value);
 		rangeTimes.set(slider, now);
-		void playSfx('slider-detent', { rate: 0.9 + Number(slider.valueAsNumber % 5) * 0.025 });
+		audio.sfx.play('slider-detent', {
+			rate: 0.9 + Number(slider.valueAsNumber % 5) * 0.025
+		});
 	}
 
 	function visibility() {
-		document.hidden ? suspendAudio() : resumeAudio();
+		document.hidden ? audio.suspend() : audio.resume();
+	}
+
+	function pagehide() {
+		audio.suspend();
+	}
+
+	function pageshow() {
+		if (!document.hidden) audio.resume();
 	}
 </script>
 
@@ -59,5 +84,7 @@
 	onclickcapture={click}
 	onchange={change}
 	oninput={input}
+	onpagehide={pagehide}
+	onpageshow={pageshow}
 />
 <svelte:document onvisibilitychange={visibility} />

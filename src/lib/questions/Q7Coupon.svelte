@@ -1,7 +1,13 @@
 <script>
-	// Q7 — the escalation ladder. Each step ratchets; D is the punchline.
-	// Grounded in a specific weekend-dinner scene so the stakes are social
-	// (your friend is watching) rather than purely transactional.
+	// expired-coupon — the escalation ladder. Each rung ratchets, and the last
+	// two carry it clean past the point of sanity over what is, at most, a few
+	// dollars off a dinner. Grounded in a specific weekend-dinner scene so the
+	// stakes are social — your friend is sitting right there watching you decide
+	// whether to involve law enforcement.
+	//
+	// The two absurd rungs are scored apart on purpose: the police are the
+	// impulsive nuclear option, a lawyer is the patient one. Both are a total
+	// loss of proportion, which is what `scope` toward detail measures here.
 	import PickList from './PickList.svelte';
 	let { onAnswer } = $props();
 
@@ -21,6 +27,14 @@
 		{
 			label: 'Argue it on principle until somebody gives in',
 			score: { risk: 3, tempo: 1, coord: -1 }
+		},
+		{
+			label: 'Call the police',
+			score: { risk: 3, tempo: 3, scope: -2, creative: -1, coord: -1 }
+		},
+		{
+			label: 'Say nothing tonight. Lawyer up in the morning',
+			score: { risk: 3, tempo: -2, scope: -3, coord: 1, social: -1 }
 		}
 	];
 </script>

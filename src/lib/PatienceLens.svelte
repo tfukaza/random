@@ -1,23 +1,21 @@
 <script>
 	// Wraps a whole question and changes how it *arrives*, based on the patience
-	// claimed in Q29. Applied by the orchestrator to every question in the band
+	// claimed in Q29. Applied by the orchestrator to every question in the chapter
 	// after Q29 up to the next interlude.
 	//
-	// The hard constraint: this thing cannot know what question it's wrapping.
-	// There's no shared text or option schema — questions are arbitrary
-	// components. So both modes work without reading a single word:
+	// Questions remain arbitrary components, but shared answer controls expose
+	// stable reader labels in their rendered markup:
 	//
-	//   fast (claimed impatient) → the whole question — premise, prompt and every
-	//     option — is collapsed into one sentence and fired past at 500 wpm, and
-	//     then all you get is a box to type one number into. You said you hated
-	//     waiting, so nothing waits for you.
+	//   fast (claimed impatient) → premise, prompt and every option are fired past
+	//     at high speed; the original visuals and answer controls remain visible
+	//     and unlock only when the reader finishes.
 	//   slow (claimed patient)   → every element still animates in exactly as it
 	//     normally would — words, rules, cards, sliders, the № marker — just
 	//     twenty times slower, and nothing can be touched until it has finished
 	//     arriving.
 	//
 	// Both offer the same escape hatch, and taking it ends the bit for the rest
-	// of the band (see `bailOut` in patienceState).
+	// of the chapter (see `bailOut` in patienceState).
 	//
 	// HOW SLOW MODE WORKS. Every pre-answer animation in this app is CSS, so
 	// there is no need to touch a single question: `getAnimations({subtree})`
@@ -26,27 +24,25 @@
 	// included — so the reveal stretches proportionally rather than being masked.
 	//
 	// Deliberately NOT covered: JS-driven timing (`tweened`, `setTimeout`). In
-	// this band every such timer fires only *after* an answer is given (Q22's
+	// this chapter every such timer fires only *after* an answer is given (Q22's
 	// reveal, PickList's ripple, Q52's commit), and once you have answered the
 	// patience test is over — so leaving those at full speed is correct.
 	//
-	// HOW FAST MODE WORKS. The question is rendered exactly once and *stowed* —
-	// still in the DOM at full width, just invisible and untouchable — so it can
-	// be read out of the DOM and, when the taker types a number, driven through
-	// its OWN controls. That is what keeps every question's per-option scoring,
-	// ledger writes and cross-checks working exactly as they do unlensed; the
-	// lens never invents a score. See patience/questionAdapters.js.
+	// HOW FAST MODE WORKS. The question is rendered exactly once. Its authored
+	// text is hidden while the reader presents that text; its real visuals and
+	// controls never move or remount. See patience/questionAdapters.js.
 	//
 	// It is rendered in ONE place and toggled with a class, never moved between
 	// branches: moving it would remount the question component, throwing away
 	// both the host we read and the state we are about to drive.
 	import { patience, bailOut } from '$lib/questions/patienceState.svelte.js';
-	import { readQuestion } from '$lib/patience/questionAdapters.js';
+	import { clearPresentationOptions, readPresentation } from '$lib/patience/questionAdapters.js';
 	import SpeedRead from '$lib/SpeedRead.svelte';
 	import { cascade } from '$lib/reveal.js';
+	import { markReady, recordEvent, setInteractionLocked } from '$lib/questions/metrics.svelte.js';
 
-	/** @type {{ mode: 'fast' | 'normal' | 'slow', debug?: boolean, children: import('svelte').Snippet }} */
-	let { mode, debug = false, children } = $props();
+	/** @type {{ mode: 'fast' | 'normal' | 'slow', debug?: boolean, allowEscape?: boolean, children: import('svelte').Snippet }} */
+	let { mode, debug = false, allowEscape = true, children } = $props();
 
 	// 1500 wpm — 40ms a word. Well past the point of comfortable reading, which
 	// is the point: you rated yourself maximally impatient.
@@ -67,25 +63,10 @@
 	let host = $state();
 
 	/* ------------------------------------------------------------ fast mode */
-	// Shape mirrored from questionAdapters.js — a cross-file JSDoc type import
-	// doesn't resolve here, and without a resolvable annotation `adapter` narrows
-	// to `never` and every use of it errors.
 	/** @typedef {{ w: string, hold?: number, tone?: 'num' | 'body' | 'chunk' }} Token */
-	/** @typedef {{ kind: 'cards' | 'slider' | 'integer', tokens: Token[], sentence: string,
-	 *   hint: string, parse: (raw: string) => number | null,
-	 *   validate: (n: number) => boolean, answer: (n: number) => Promise<boolean> }} Adapter */
-	let adapter = $state(/** @type {Adapter | null} */ (null));
-	// True once the question has been un-stowed: either we could not read/drive
-	// it (fail open — never strand someone in front of a box that can't commit),
-	// or they have answered and should see the question's own reveal.
-	let escaped = $state(false);
+	/** @typedef {{ tokens: Token[], sentence: string }} Presentation */
+	let presentation = $state(/** @type {Presentation | null} */ (null));
 	let read = $state(false);
-	let typed = $state('');
-	let submitted = $state(false);
-	let outOfRange = $state(false);
-
-	const parsed = $derived(adapter ? adapter.parse(typed) : null);
-	const valid = $derived(parsed !== null && !!adapter?.validate(parsed));
 
 	// Chrome timing, per reveal.js: the reader may not start until the lead-in
 	// has finished, and the entry box waits on the read, not on a timer.
@@ -94,16 +75,12 @@
 		return { lead: c.text(LEAD), rule: c.rule(), reader: c.done() };
 	});
 
-	async function submit() {
-		if (!adapter || submitted || !valid || parsed === null) return;
-		submitted = true;
-		const ok = await adapter.answer(parsed);
-		// Either way the question comes back: on success so its own reveal plays
-		// (Q22's tangent lines take 2.6s and are its entire payoff), on failure so
-		// it can still be answered by hand. Its controls are already disabled
-		// after a successful drive, so there is no second look in substance.
-		escaped = true;
-		if (!ok) submitted = false;
+	function completeFast() {
+		if (read) return;
+		read = true;
+		setInteractionLocked(false);
+		markReady('fast-reader');
+		recordEvent('reader-completed');
 	}
 
 	// Dev-panel readout only — the governor itself never reads these.
@@ -127,11 +104,15 @@
 	// this covers a mode change mid-question (i.e. bailing out).
 	$effect(() => {
 		const m = mode;
+		setInteractionLocked(m !== 'normal');
 		elapsed = 0;
 		arrived = m !== 'slow';
 		liveRate = m === 'slow' ? SLOW_RATE : 1;
 
 		if (m === 'fast') {
+			read = false;
+			presentation = null;
+			recordEvent('reader-started');
 			// Read the question out of the DOM. Everything we need is present at
 			// first render (only animation-delay is staggered), but retry a few
 			// frames for any future question that builds content asynchronously —
@@ -140,19 +121,23 @@
 			let raf = 0;
 			const attempt = () => {
 				if (!host) return;
-				const a = readQuestion(host);
+				const a = readPresentation(host);
 				if (a) {
-					adapter = a;
+					presentation = a;
 					return;
 				}
 				if (++tries > 8) {
-					escaped = true;
+					completeFast();
 					return;
 				}
 				raf = requestAnimationFrame(attempt);
 			};
 			raf = requestAnimationFrame(attempt);
-			return () => cancelAnimationFrame(raf);
+			return () => {
+				cancelAnimationFrame(raf);
+				if (host) clearPresentationOptions(host);
+				setInteractionLocked(false);
+			};
 		}
 
 		if (m !== 'slow') return;
@@ -160,8 +145,10 @@
 		// Without the Web Animations API there is nothing to slow, and holding
 		// interaction would strand the taker on a question they can never
 		// answer. Fail open: deliver it normally.
-		if (!host || typeof host.getAnimations !== 'function') {
-			arrived = true;
+			if (!host || typeof host.getAnimations !== 'function') {
+				arrived = true;
+				setInteractionLocked(false);
+				markReady('slow-fallback');
 			return;
 		}
 
@@ -197,26 +184,29 @@
 			// Staggered reveals leave brief gaps where nothing is mid-flight, so
 			// require two consecutive quiet polls before calling it arrived.
 			clearPolls = running === 0 ? clearPolls + 1 : 0;
-			if (clearPolls >= 2 || ms >= CEILING_MS) {
-				arrived = true;
+				if (clearPolls >= 2 || ms >= CEILING_MS) {
+					arrived = true;
+					setInteractionLocked(false);
+					markReady('slow-arrived');
 				clearInterval(iv);
 			}
 		}, POLL_MS);
 
-		return () => {
+			return () => {
 			cancelled = true;
 			cancelAnimationFrame(raf);
 			clearInterval(iv);
 			host?.removeEventListener('animationstart', apply, true);
 			host?.removeEventListener('transitionrun', apply, true);
 			// Bailing out or advancing must not leave anything crawling.
-			for (const a of touched) a.playbackRate = 1;
-		};
+				for (const a of touched) a.playbackRate = 1;
+				setInteractionLocked(false);
+			};
 	});
 
 	// Don't offer the way out instantly — let the bit land first.
 	const offerBail = $derived(
-		mode === 'fast' ? read && !submitted && !escaped : elapsed >= 2000 && !arrived
+		allowEscape && (mode === 'fast' ? read : elapsed >= 2000 && !arrived)
 	);
 </script>
 
@@ -231,61 +221,27 @@
 				{@render children()}
 			</div>
 		{:else}
-			<!-- Rendered once and only once. `escaped` un-stows it in place; moving
-			     it to another branch would remount the question and destroy both the
-			     host we read and the controls we drive. -->
-			<div class="stow" class:stow--open={escaped} inert={!escaped} bind:this={host}>
+			<div class="fast-content" class:reading={!read} inert={!read} bind:this={host}>
 				{@render children()}
 			</div>
 		{/if}
 
-		{#if mode === 'fast' && !escaped}
+		{#if mode === 'fast'}
 			<div class="rsvp">
 				<p class="lead" style="animation-delay: {seq.lead}ms">{LEAD}</p>
 				<hr class="rule" style="animation-delay: {seq.rule}ms" />
 
-				{#if adapter}
+				{#if presentation}
 					{#if !read}
 						<SpeedRead
-							tokens={adapter.tokens}
-							sentence={adapter.sentence}
+							tokens={presentation.tokens}
+							sentence={presentation.sentence}
 							wpm={WPM}
 							delay={seq.reader}
-							onDone={() => (read = true)}
+							onDone={completeFast}
 						/>
 					{:else}
-						<p class="gone">That was the question, and those were the options.</p>
-						<div class="entry">
-							<label class="field">
-								<span class="field-label">Your answer</span>
-								<input
-									type="text"
-									inputmode="numeric"
-									enterkeyhint="go"
-									autocomplete="off"
-									spellcheck="false"
-									placeholder="—"
-									bind:value={typed}
-									disabled={submitted}
-									oninput={() => (outOfRange = false)}
-									onkeydown={(e) => {
-										if (e.key === 'Enter') {
-											e.preventDefault();
-											if (valid) submit();
-											else outOfRange = parsed !== null;
-										}
-									}}
-								/>
-							</label>
-							<p class="hint">
-								{outOfRange ? adapter.hint + '.' : adapter.hint}
-							</p>
-						</div>
-						<div class="actions">
-							<button class="next" onclick={submit} disabled={!valid || submitted}>
-								{submitted ? 'Recorded.' : 'Submit →'}
-							</button>
-						</div>
+						<p class="gone">The question is ready.</p>
 					{/if}
 				{/if}
 			</div>
@@ -306,9 +262,9 @@
 			Presentation
 			<select bind:value={patience.debugForce}>
 				<option value="">↳ from Q29 answer ({patience.value ?? 'unset'})</option>
-				<option value="fast">Fast (impatient, 1–2)</option>
-				<option value="normal">Normal (3–5)</option>
-				<option value="slow">Slow (patient, 6–7)</option>
+				<option value="fast">Fast (impatient, 1)</option>
+				<option value="normal">Normal (2–6)</option>
+				<option value="slow">Slow (patient, 7)</option>
 			</select>
 		</label>
 		<p class="debug-note">bailed: {patience.bailed}</p>
@@ -324,28 +280,58 @@
 <style>
 	.lens {
 		position: relative;
+		display: flex;
+		flex-direction: column;
 	}
-	/* Stowed: still laid out at full width — so SVG viewBoxes, ResizeObservers
-	   and getBoundingClientRect all still see real geometry, which display:none
-	   would destroy — but invisible and inert. `pointer-events: none` blocks a
-	   real click; el.click() still dispatches, which is how we drive it. */
-	.stow {
-		position: absolute;
-		top: 0;
-		left: 0;
+	.fast-content {
+		order: 1;
 		width: 100%;
-		opacity: 0;
-		pointer-events: none;
 	}
-	.stow--open {
-		position: static;
-		width: auto;
-		opacity: 1;
-		pointer-events: auto;
+	/* Authored prose is delivered by the reader. Keep its layout box so figures
+	   and controls do not jump, while leaving the actual controls fully visible. */
+	.fast-content :global(span.split),
+	.fast-content :global([data-reader-text]),
+	.fast-content :global(.premise),
+	.fast-content :global(.statement),
+	.fast-content :global(.hint),
+	.fast-content :global(h1),
+	.fast-content :global(h2) {
+		visibility: hidden;
+	}
+	.fast-content :global([data-reader-option]) {
+		position: relative;
+	}
+	.fast-content :global([data-reader-label]) {
+		visibility: hidden !important;
+	}
+	.fast-content :global([data-reader-option]::after) {
+		content: attr(data-reader-number);
+		position: absolute;
+		z-index: 8;
+		top: 50%;
+		left: 50%;
+		display: grid;
+		place-items: center;
+		min-width: 2rem;
+		height: 2rem;
+		padding: 0 0.25rem;
+		transform: translate(-50%, -50%);
+		box-sizing: border-box;
+		border: 1px solid var(--ink);
+		border-radius: 999px;
+		background: var(--surface);
+		color: var(--ink);
+		font-family: inherit;
+		font-size: 0.9rem;
+		font-style: normal;
+		font-weight: 700;
+		line-height: 1;
+		pointer-events: none;
 	}
 
 	.rsvp {
 		position: relative;
+		order: 0;
 	}
 	.lead {
 		margin: 0 0 1.25rem;
@@ -366,60 +352,6 @@
 		color: var(--muted);
 		animation: rise 0.42s both;
 	}
-	.entry {
-		margin-bottom: 1.5rem;
-		animation: rise 0.42s 0.1s both;
-	}
-	.field {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
-	.field-label {
-		font-size: 0.62rem;
-		text-transform: uppercase;
-		letter-spacing: 0.16em;
-		color: var(--muted);
-	}
-	.entry input {
-		width: 100%;
-		padding: 0.85rem 1rem;
-		font: inherit;
-		font-size: 1.25rem;
-		font-variant-numeric: tabular-nums;
-		color: var(--ink);
-		background: var(--surface);
-		border: 1px solid var(--rule);
-		border-radius: var(--radius);
-	}
-	.entry input:focus-visible {
-		outline: 2px solid var(--ink);
-		outline-offset: 2px;
-	}
-	.hint {
-		margin: 0.5rem 0 0;
-		font-size: 0.8rem;
-		color: var(--muted);
-	}
-	.actions {
-		display: flex;
-		justify-content: flex-end;
-		animation: rise 0.42s 0.18s both;
-	}
-	.next {
-		padding: 0.75rem 1.5rem;
-		font: inherit;
-		font-weight: 600;
-		background: var(--ink);
-		color: var(--bg);
-		border: none;
-		border-radius: var(--radius);
-		cursor: pointer;
-	}
-	.next:disabled {
-		opacity: 0.45;
-		cursor: default;
-	}
 	/* Slow: nothing is hidden or masked — the question simply arrives at 1/20th
 	   speed. Pointer events stay off until it finishes, because elements fading
 	   in from opacity 0 are otherwise invisible but still clickable, and the
@@ -428,6 +360,7 @@
 		pointer-events: none;
 	}
 	.hatch {
+		order: 2;
 		margin-top: 1.5rem;
 		animation: rise 0.6s both;
 	}

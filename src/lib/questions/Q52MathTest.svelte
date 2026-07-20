@@ -1,58 +1,87 @@
 <script>
-	// Q52 — the test of Q51's claim. Difficulty is chosen by what the taker just
-	// said about themselves: 1–4 gets an arithmetic word problem, 5–6 a second
-	// derivative, 7 a nastier one.
+	// Q52 — the test of Q51's claim, and ONLY when that claim was a 7. The slot
+	// branches on the endpoint, matching the patience lens: a 7 is an assertion
+	// worth testing, anything from 1 to 6 is a preference, and the quiz has no
+	// business retaliating against a preference. So 7 gets the second-derivative
+	// problem and 1–6 get the bananas — an ordinary supermarket question with no
+	// right answer at all.
+	//
+	// The bananas are not filler. Five a week is stated, so the answer is read
+	// against a baseline: what the discount actually moved. Answering "5" means
+	// half price moved you nothing; answering "20" means you bought fifteen
+	// bananas you cannot eat because of a sign.
 	//
 	// Per P6 (never break character) this NEVER acknowledges the branch. It does
 	// not say "you asked for this", and it never reveals whether the answer was
 	// right — it simply records it and moves on, exactly like every other
-	// question. The give-up button is the only thing that costs anything.
+	// question. The give-up button is the only thing that costs anything, and it
+	// only exists on the math branch, because there is nothing to give up on when
+	// the question is how many bananas you want.
 	import SplitText from '$lib/SplitText.svelte';
 	import { cascade } from '$lib/reveal.js';
 	import { makeProblem, parseTypedAnswer, isCorrect } from '$lib/mathProblems.js';
-	import { ledger, logAnswer } from './ledger.svelte.js';
+	import { latestResponse, recordDraft } from '$lib/questions/metrics.svelte.js';
+	import SubmitAnswer from './SubmitAnswer.svelte';
 
 	let { onAnswer } = $props();
+
+	// Missing entry = deep-linked past Q51. Absence is not a boast, so it falls
+	// to the bananas along with every other non-7. Read once — the orchestrator
+	// remounts this component per question, so there is nothing to keep reactive.
+	const claim = latestResponse('easy-or-hard')?.value;
+
+	// One draw per mount. $state only so the dev panel can re-roll; nothing in
+	// the normal flow reassigns it mid-answer. Null on the banana branch.
+	let problem = $state(claim === 7 ? makeProblem(7) : null);
+
+	const BANANAS = {
+		heading: 'Bananas are 50% off today.',
+		statement: 'You buy about five in a typical week.',
+		field: 'How many do you buy?'
+	};
+	const USUAL = 5;
+
+	const heading = $derived(problem ? 'Answer the following.' : BANANAS.heading);
+	const statement = $derived(problem ? problem.promptText : BANANAS.statement);
 
 	// heading → rule → statement → math → entry → actions (last).
 	const seq = $derived.by(() => {
 		const c = cascade();
-		c.text('Answer the following.');
+		c.text(heading);
 		const rule = c.rule();
-		const statement = c.text(problem.promptText);
-		const math = problem.mathml ? c.block() : 0;
+		const statementAt = c.text(statement);
+		const math = problem?.mathml ? c.block() : 0;
 		const entry = c.block();
-		return { rule, statement, math, entry, actions: c.action() };
+		return { rule, statement: statementAt, math, entry, actions: c.action() };
 	});
-
-	// Missing entry = deep-linked past Q51; `tierForRating` falls back to easy
-	// rather than guessing. Read once — the orchestrator remounts this component
-	// per question, so there is nothing to keep reactive.
-	const claim = ledger.answers.q51?.value;
-
-	// One draw per mount. $state only so the dev panel can re-roll; nothing in
-	// the normal flow reassigns it mid-answer.
-	let problem = $state(makeProblem(claim));
 
 	let typed = $state('');
 	let committed = $state(false);
+	let gaveUp = $state(false);
 
 	const parsed = $derived(parseTypedAnswer(typed));
 
+	// Graded against the stated five-a-week baseline: the axis being measured is
+	// how far a discount can push you past what you actually need. Buying five is
+	// immunity to the sign; buying twenty is the sign doing your shopping.
+	/** @param {number} n */
+	function bananaScore(n) {
+		if (n <= USUAL) return { scope: -2, risk: -1, creative: -1 };
+		if (n <= 9) return { scope: 1 };
+		if (n <= 19) return { scope: 2, risk: 1, tempo: 1 };
+		return { scope: 3, risk: 2, tempo: 2 };
+	}
+
 	/** @param {'answered' | 'gave-up'} outcome */
 	function scoreFor(outcome) {
+		if (!problem) return bananaScore(parsed ?? USUAL);
 		if (outcome === 'gave-up') {
-			// Bailing after claiming you love a challenge is a bigger contradiction
-			// than bailing after admitting you like an easy life, so the cost scales
-			// with the boast — the same cross-check shape Q49 runs against Q48.
-			const bragged = typeof claim === 'number' ? claim : 4;
-			return { honesty: -Math.max(1, Math.round((bragged - 1) / 2)), tempo: 2 };
+			// Only a 7 can reach this branch at all, so bailing is the full
+			// contradiction of the boast every time — the same cross-check shape
+			// Q49 runs against Q48.
+			return { honesty: -3, tempo: 2 };
 		}
-		if (isCorrect(typed, problem)) {
-			return problem.tier === 'brutal'
-				? { scope: 2 }
-				: { scope: 1 };
-		}
+		if (isCorrect(typed, problem)) return { scope: 2 };
 		// A wrong answer costs nothing — it was an honest attempt.
 		return {};
 	}
@@ -62,30 +91,46 @@
 		if (committed) return;
 		if (outcome === 'answered' && parsed === null) return;
 		committed = true;
-		const right = outcome === 'answered' && isCorrect(typed, problem);
-		logAnswer('q52', { label: outcome === 'gave-up' ? 'gave-up' : right ? 'correct' : 'wrong' });
+		const label = !problem
+			? String(parsed)
+			: outcome === 'gave-up'
+				? 'gave-up'
+				: isCorrect(typed, problem)
+					? 'correct'
+					: 'wrong';
+		recordDraft({ format: 'numeric-entry', value: parsed, label });
 		setTimeout(() => onAnswer(scoreFor(outcome)), 600);
+	}
+
+	function chooseGiveUp() {
+		if (committed) return;
+		gaveUp = true;
+		recordDraft({ format: 'numeric-entry', value: null, label: 'gave-up' });
+	}
+
+	function editAnswer() {
+		gaveUp = false;
+		recordDraft({ format: 'numeric-entry', value: typed, label: typed });
 	}
 
 	/** @param {KeyboardEvent} e */
 	function onKey(e) {
 		if (e.key === 'Enter') {
 			e.preventDefault();
-			commit('answered');
 		}
 	}
 </script>
 
 <div class="math-test">
-	<h2><SplitText text="Answer the following." /></h2>
+	<h2><SplitText text={heading} /></h2>
 	<hr class="rule" style="animation-delay: {seq.rule}ms" />
 
-	<p class="statement"><SplitText text={problem.promptText} delay={seq.statement} /></p>
+	<p class="statement"><SplitText text={statement} delay={seq.statement} /></p>
 
-	{#if problem.mathml}
+	{#if problem?.mathml}
 		<!-- Trusted, author-generated markup — the MathML is built from our own
 		     templates and no taker input reaches it. Same trust model as the SVG
-		     sprites in backpackItems.js. -->
+		     sprites in boxItems.js. -->
 		<div class="math" role="math" aria-label={problem.plainMath} style="animation-delay: {seq.math}ms">
 			{@html problem.mathml}
 		</div>
@@ -93,7 +138,7 @@
 
 	<div class="entry" style="animation-delay: {seq.entry}ms">
 		<label class="field">
-			<span class="field-label">Your answer</span>
+			<span class="field-label">{problem ? 'Your answer' : BANANAS.field}</span>
 			<input
 				type="text"
 				inputmode="numeric"
@@ -101,7 +146,9 @@
 				autocapitalize="off"
 				spellcheck="false"
 				bind:value={typed}
+				oninput={editAnswer}
 				onkeydown={onKey}
+				data-answer-id="numeric-answer"
 				disabled={committed}
 				placeholder="—"
 			/>
@@ -109,23 +156,39 @@
 	</div>
 
 	<div class="actions" style="animation-delay: {seq.actions}ms">
-		<button class="ghost" onclick={() => commit('gave-up')} disabled={committed}>I give up</button>
-		<button class="next" onclick={() => commit('answered')} disabled={committed || parsed === null}>
-			Submit →
-		</button>
+		<!-- Math branch only. "I give up" against "how many bananas" would read as
+		     the quiz breaking character to sneer at an ordinary answer. -->
+		{#if problem}
+			<button
+				class="ghost"
+				class:selected={gaveUp}
+				data-reader-option="I give up"
+				data-answer-id="gave-up"
+				aria-pressed={gaveUp}
+				onclick={chooseGiveUp}
+				disabled={committed}><span data-reader-label>I give up</span></button
+			>
+		{/if}
+		<SubmitAnswer
+			disabled={!gaveUp && parsed === null}
+			{committed}
+			label="Submit →"
+			margin="0 0 0 auto"
+			onsubmit={() => commit(gaveUp ? 'gave-up' : 'answered')}
+		/>
 	</div>
 </div>
 
 {#if import.meta.env.DEV}
 	<aside class="debug">
 		<p class="debug-title">🛠 debug · dev only</p>
-		<p class="debug-note">Q51 claim: {claim ?? 'unset'} → {problem.tier}</p>
-		<p class="debug-note">answer: {problem.answer}</p>
+		<p class="debug-note">Q51 claim: {claim ?? 'unset'} → {problem ? problem.tier : 'bananas'}</p>
+		<p class="debug-note">answer: {problem ? problem.answer : 'n/a — no right answer'}</p>
 		<div class="debug-row">
+			<button onclick={() => (problem = null)}>bananas</button>
 			{#each [2, 5, 7] as r}
 				<button onclick={() => (problem = makeProblem(r))}>{r}</button>
 			{/each}
-			<button onclick={() => (problem = makeProblem(claim))}>reroll</button>
 		</div>
 	</aside>
 {/if}
@@ -207,8 +270,7 @@
 		justify-content: space-between;
 		gap: 0.75rem;
 	}
-	.ghost,
-	.next {
+	.ghost {
 		padding: 0.75rem 1.5rem;
 		font: inherit;
 		font-weight: 600;
@@ -224,13 +286,6 @@
 		background: var(--accent-soft);
 		color: inherit;
 	}
-	.next {
-		margin-left: auto;
-		background: var(--ink);
-		color: var(--bg);
-		border: none;
-	}
-	.next:disabled,
 	.ghost:disabled {
 		opacity: 0.45;
 		cursor: default;
@@ -281,9 +336,6 @@
 	@media (max-width: 480px) {
 		.actions {
 			flex-direction: column-reverse;
-		}
-		.next {
-			margin-left: 0;
 		}
 	}
 </style>

@@ -6,7 +6,6 @@
 	// It also does structural work: sitting immediately after Q53, it is the first
 	// screen the spreading pool from Q53 actually carries onto.
 	import PickList from './PickList.svelte';
-	import { logAnswer } from './ledger.svelte.js';
 
 	let { onAnswer } = $props();
 
@@ -20,8 +19,6 @@
 		{ label: 'Eat the food in front of them', score: { creative: 3, risk: 3, coord: -2, social: 1 } }
 	];
 
-	/** @param {number} i */
-	const record = (i) => logAnswer('q54', { index: i });
 </script>
 
-<PickList {premise} {prompt} {options} {onAnswer} onPick={record} />
+<PickList {premise} {prompt} {options} {onAnswer} />

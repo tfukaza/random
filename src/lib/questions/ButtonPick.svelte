@@ -4,22 +4,33 @@
 	// both answers the question and demonstrates the style. Auto-commits on click.
 	import SplitText from '$lib/SplitText.svelte';
 	import { cascade, ITEM_MS } from '$lib/reveal.js';
+	import SubmitAnswer from './SubmitAnswer.svelte';
+	import { recordDraft } from '$lib/questions/metrics.svelte.js';
 
 	let { prompt, options, onAnswer, onPick = () => {} } = $props();
 
 	const seq = $derived.by(() => {
 		const c = cascade();
-		return { prompt: c.text(prompt), rule: c.rule(), items: c.items(options.length) };
+		return { prompt: c.text(prompt), rule: c.rule(), items: c.items(options.length), submit: c.action() };
 	});
 
 	/** @type {number | null} */
 	let picked = $state(null);
+	let committed = $state(false);
 
 	/** @param {number} i */
 	function choose(i) {
+		if (committed) return;
 		picked = i;
 		onPick?.(i);
-		setTimeout(() => onAnswer(options[i].score), 340);
+		recordDraft({ format: 'button-choice', value: options[i].id ?? i, label: options[i].label });
+	}
+
+	function submit() {
+		const choice = picked;
+		if (choice === null || committed) return;
+		committed = true;
+		setTimeout(() => onAnswer(options[choice].score), 340);
 	}
 </script>
 
@@ -35,14 +46,18 @@
 			>
 				<button
 					class="btn {opt.variant}"
-					disabled={picked !== null}
+					data-reader-option={opt.readerLabel ?? opt.label}
+					data-answer-id={opt.id ?? i}
+					aria-pressed={picked === i}
+					disabled={committed}
 					onclick={() => choose(i)}
 				>
-					{opt.label}
+					<span data-reader-label>{opt.label}</span>
 				</button>
 			</div>
 		{/each}
 	</div>
+	<SubmitAnswer disabled={picked === null} {committed} delay={seq.submit} onsubmit={submit} />
 </div>
 
 <style>

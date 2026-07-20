@@ -1,5 +1,5 @@
 <script>
-	// Q9 — still in the "normal" band, closing it out.
+	// Q9 — a plain one, late in chapter 1.
 	import PickList from './PickList.svelte';
 	let { onAnswer } = $props();
 

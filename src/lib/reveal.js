@@ -15,7 +15,7 @@
 //
 // Everything is expressed in milliseconds at normal speed. PatienceLens scales
 // the resulting CSS animations wholesale via playbackRate, so nothing here
-// needs to know about the patience band.
+// needs to know about the patience chapter.
 
 /** Stagger between words of a text block. */
 export const WORD_MS = 75;

@@ -1,14 +1,16 @@
 <script>
-	// Q19 — "which wallpaper looks best?" Each option button IS a live preview of
-	// its wallpaper style: plain, subtle dot grid, emojis flying around, gradient.
-	// Recorded into the shared choices store in case a later question wants to
-	// wallpaper itself with the taker's pick.
+	// wallpaper-taste — closes the design block. Each option button IS a live
+	// preview of its style: plain, subtle dot grid, emojis flying around,
+	// gradient. Recorded into the shared choices store, which artistic-claim
+	// reads immediately after. The "your quiz" framing is set up by font-taste.
 	import SplitText from '$lib/SplitText.svelte';
 	import { choices } from '$lib/design/choices.svelte.js';
 	import EmojiFloat from './EmojiFloat.svelte';
+	import SubmitAnswer from './SubmitAnswer.svelte';
+	import { recordDraft } from '$lib/questions/metrics.svelte.js';
 	let { onAnswer } = $props();
 
-	const prompt = 'If you had to choose, which wallpaper looks best to you?';
+	const prompt = 'And the background behind it all?';
 
 	const options = [
 		{ id: 'plain', label: 'Plain background', score: { creative: -2 } },
@@ -23,12 +25,21 @@
 
 	/** @type {number | null} */
 	let picked = $state(null);
+	let committed = $state(false);
 
 	/** @param {number} i */
 	function choose(i) {
+		if (committed) return;
 		picked = i;
 		choices.wallpaper = options[i].id;
-		setTimeout(() => onAnswer(options[i].score), 340);
+		recordDraft({ format: 'wallpaper-choice', value: options[i].id, label: options[i].label });
+	}
+
+	function submit() {
+		const choice = picked;
+		if (choice === null || committed) return;
+		committed = true;
+		setTimeout(() => onAnswer(options[choice].score), 340);
 	}
 </script>
 
@@ -39,18 +50,22 @@
 		{#each options as opt, i}
 			<button
 				class="card {opt.id}"
+				data-reader-option={opt.label}
+				data-answer-id={opt.id}
+				aria-pressed={picked === i}
 				class:picked={picked === i}
 				style="--i: {i}"
-				disabled={picked !== null}
+				disabled={committed}
 				onclick={() => choose(i)}
 			>
 				{#if opt.id === 'crazy'}
 					<EmojiFloat emojis={EMOJIS} perEmoji={3} size="1rem" />
 				{/if}
-				<span class="label">{opt.label}</span>
+				<span class="label" data-reader-label>{opt.label}</span>
 			</button>
 		{/each}
 	</div>
+	<SubmitAnswer disabled={picked === null} {committed} delay={650} onsubmit={submit} />
 </div>
 
 <style>

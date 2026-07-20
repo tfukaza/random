@@ -5,14 +5,14 @@
 	import { buildShareText } from '$lib/shareText.js';
 	import SplitText from '$lib/SplitText.svelte';
 	import CountUp from '$lib/CountUp.svelte';
-	import { playSfx, setMusicRate, setMusicTrack } from '$lib/audio/audio.svelte.js';
+	import { audio } from '$lib/audio/audio.svelte.js';
 
 	let { scores, onRestart } = $props();
 
 	onMount(() => {
-		setMusicRate(1);
-		void setMusicTrack('report', { restart: true });
-		void playSfx('result-reveal');
+		const sounds = audio.sfx.createScope('result');
+		void sounds.play('result-reveal');
+		return () => sounds.dispose();
 	});
 
 	// The headline identity: one of the 128 seven-axis types.
@@ -69,8 +69,8 @@
 </script>
 
 <div class="result">
-	<p class="eyebrow">You are…</p>
-	<p class="type-code">Type {persona.code}</p>
+	<p class="eyebrow" data-reader-text>You are…</p>
+	<p class="type-code" data-reader-text>Type {persona.code}</p>
 
 	<!-- The plant is offered without justification, comment, or any suggestion
 	     that a plant is an unusual thing to be told you are. -->
@@ -80,7 +80,7 @@
 		</div>
 		<figcaption>
 			<h1><SplitText text={persona.plant.common} delay={NAME_MS} stagger={60} /></h1>
-			<p class="binomial">{persona.plant.scientific}</p>
+			<p class="binomial" data-reader-text>{persona.plant.scientific}</p>
 		</figcaption>
 	</figure>
 
@@ -100,16 +100,16 @@
 	</p>
 
 	<hr class="rule rule--scotch" />
-	<p class="blurb">{persona.blurb}</p>
+	<p class="blurb" data-reader-text>{persona.blurb}</p>
 	<!-- The reading: where the certificate briefly becomes human. -->
-	<p class="reading">{persona.reading}</p>
+	<p class="reading" data-reader-text>{persona.reading}</p>
 	<div class="fleuron" aria-hidden="true">
 		<hr class="rule" />
 		<span>❦</span>
 		<hr class="rule" />
 	</div>
 
-	<p class="section-head">Temperament profile</p>
+	<p class="section-head" data-reader-text>Temperament profile</p>
 	<div class="spectra">
 		{#each axes as axis, i}
 			<div class="axis" style="--i: {i}">

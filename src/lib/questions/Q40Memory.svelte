@@ -1,54 +1,48 @@
 <script>
-	// Q40 — insult to injury. A perfectly ordinary self-assessment question,
-	// except it knows how you just did on Q39.
+	// memory-claim — the ordinary half of a two-question setup. A five-point
+	// agree/disagree, the most recognizable input in the genre, asked completely
+	// straight, and then immediately followed by terms-consent: 1,000 words with
+	// a request for a dollar buried in the middle of them. Claim a good memory,
+	// then be handed something to remember.
 	//
-	// Get the recall question wrong and a single word appears — "actually" —
-	// which turns a neutral survey item into the quiz raising an eyebrow at
-	// you. Get it right (or arrive here via deep-link, where recall.correct is
-	// still null) and the question stays perfectly straight-faced, so the dig
-	// only ever lands on people who earned it.
+	// Both questions render the SAME LikertPick row, which is the point — the
+	// second has to arrive as the same ordinary survey item as the first, so the
+	// only thing that has changed is the amount of text above it.
 	//
-	// IMPORTANT: keep this immediately after Q39Recall — the barb only reads if
-	// the failure is still fresh.
-	import PickList from './PickList.svelte';
+	// The flatness is ON PURPOSE. The other Likert in the quiz (artistic-claim)
+	// is a trap, which would make the format itself a tell if the taker never met
+	// an innocent one — so this one has to read as filler.
+	//
+	// It also plants the boast. `recall.claim` carries the answer forward to
+	// recall-trap in chapter 4, which tests it — and only tests it hard if the
+	// answer was "Strongly agree". Scoring here is deliberately thin: claiming a
+	// good memory costs nothing at the time, exactly like honesty-claim. The bill
+	// arrives much later, or not at all.
+	//
+	// This question used to sit AFTER the recall test and sharpen its wording
+	// ("do you *actually*…") based on how you'd just done. That barb died when it
+	// moved ahead; the arc is now claim-then-test rather than test-then-taunt.
+	import LikertPick from './LikertPick.svelte';
 	import { recall } from './recallState.svelte.js';
 	let { onAnswer } = $props();
 
-	const prompt = $derived(
-		recall.correct === false
-			? 'Do you actually consider yourself to have a good memory?'
-			: 'Do you consider yourself to have a good memory?'
-	);
+	const prompt = 'Do you consider yourself to have a good memory?';
 
-	const options = [
-		{ label: 'Strongly agree', score: { scope: -1, risk: 1 } },
-		{ label: 'Agree', score: { scope: -1 } },
-		// Neutral and Disagree carry no base delta on purpose — the honesty
-		// cross-check in judged() below is the whole scoring for those answers.
-		{ label: 'Neutral', score: {} },
-		{ label: 'Disagree', score: {} },
-		{ label: 'Strongly disagree', score: { risk: -1 } }
+	// Indexed by LikertPick's weak → strong order, so index 4 is the boast.
+	// recall-trap keys off that index — keep the two in step.
+	/** @type {Record<string, number>[]} */
+	const SCORES = [
+		{ risk: -1 },
+		{},
+		{},
+		{ scope: -1 },
+		{ scope: -1, risk: 1 }
 	];
 
-	// The honesty verdict: the taker just watched themselves pass or fail Q39,
-	// and this is what they claim anyway. Owning a failure is worth more than
-	// being right and saying so; null (deep-link) stays neutral. PickList hands
-	// the pick index to onPick before onAnswer fires, so capture it there.
-	let pickedIndex = -1;
-	/** @param {Record<string, number>} score */
-	function judged(score) {
-		const delta = { ...score };
-		const i = pickedIndex;
-		if (recall.correct === false && i >= 0 && i <= 1) delta.honesty = -3;
-		else if (recall.correct === true && i >= 0 && i <= 1) delta.honesty = 2;
-		else if (recall.correct === false && i >= 3) delta.honesty = 3;
-		return delta;
+	/** @param {number} i */
+	function record(i) {
+		recall.claim = i;
 	}
 </script>
 
-<PickList
-	{prompt}
-	{options}
-	onAnswer={(/** @type {Record<string, number>} */ score) => onAnswer(judged(score))}
-	onPick={(/** @type {number} */ i) => (pickedIndex = i)}
-/>
+<LikertPick {prompt} toScore={(/** @type {number} */ i) => SCORES[i]} {onAnswer} onPick={record} />

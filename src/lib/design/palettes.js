@@ -31,6 +31,16 @@ export const PALETTES = [
 		roles: { bg: '#d6e6f2', text: '#33475b', accent: '#a1c3d8' }
 	},
 	{
+		// This quiz's own tokens, lifted verbatim from app.css: --bg, --surface,
+		// --rule, --ink. Picking it designs an exact copy of the page it is
+		// printed on. The label is never rendered (palette-taste shows swatches
+		// only), so it does not give the game away.
+		id: 'paper',
+		label: 'Warm grey / ink',
+		colors: ['#e2e2e0', '#fcfcfb', '#c3c3c1', '#222220'],
+		roles: { bg: '#e2e2e0', text: '#222220', accent: '#222220' }
+	},
+	{
 		id: 'mono-orange',
 		label: 'Mono + orange',
 		colors: ['#f7f9fb', '#93a1ad', '#0f141b', '#ff6a1a'],

@@ -1,16 +1,21 @@
 <script>
-	// Q26 — inventory-Tetris backpack. A 3×4 grid; items are Tetris-ish shapes
-	// (1×1 up to 2×2 and an L) dragged from the supply pile into the pack.
-	// There's more supply than pack — what you choose to carry is the answer,
-	// and the packed list carries over to Q27 via the shared pack state.
+	// pack-box — inventory-Tetris moving box. A 3×4 grid; items are Tetris-ish
+	// shapes (1×1 up to 2×2 and an L) dragged from the pile into the box. There
+	// is more stuff than box — what you choose to keep is the answer, and the
+	// packed list carries over to airport-discard via the shared box state.
+	//
+	// The grid is deliberately too small for the pile. Sentimental items are the
+	// expensive ones (the album eats two slots, the guitar three), so keeping
+	// what matters to you costs you the things that are useful, and the question
+	// never says which is correct.
 	import SplitText from '$lib/SplitText.svelte';
 	import { cascade } from '$lib/reveal.js';
-	import { ITEMS } from './backpackItems.js';
-	import { pack } from './backpackState.svelte.js';
+	import { ITEMS } from './boxItems.js';
+	import { box } from './boxState.svelte.js';
 	import { playSfx } from '$lib/audio/audio.svelte.js';
+	import { recordDraft } from '$lib/questions/metrics.svelte.js';
 
-	const PROMPT =
-		'You found a safe house with supplies, but you must move — now. Your backpack only fits so much. What do you take?';
+	const PROMPT = 'One box is going with you. What do you take?';
 
 	let { onAnswer } = $props();
 
@@ -21,8 +26,12 @@
 		return { rule: c.rule(), layout: c.block(), leave: c.action() };
 	})();
 
-	const ROWS = 3;
-	const COLS = 4;
+	// 6 × 8 = 48 cells, which is EXACTLY the total footprint of the sixteen
+	// pieces in boxItems.js. Everything fits. See the note in that file before
+	// touching either number — the pair is a solved exact-cover problem, not a
+	// pair of layout choices.
+	const ROWS = 6;
+	const COLS = 8;
 
 	/** @type {Record<string, {row: number, col: number}>} */
 	let placements = $state({});
@@ -78,8 +87,9 @@
 
 	/** @param {number} x @param {number} y */
 	function updatePreview(x, y) {
-		const cell = dragging && cellFromPoint(x, y);
-		preview = cell ? { ...cell, valid: canPlace(dragging.id, cell.row, cell.col) } : null;
+		const active = dragging;
+		const cell = active ? cellFromPoint(x, y) : null;
+		preview = cell && active ? { ...cell, valid: canPlace(active.id, cell.row, cell.col) } : null;
 	}
 
 	/** @param {PointerEvent} e @param {string} id */
@@ -87,6 +97,8 @@
 		if (committed) return;
 		e.preventDefault();
 		if (id in placements) {
+			// Already in the box — taking it back out (or repositioning it) is a
+			// change of mind. Dragging from the pile is not.
 			const { [id]: _, ...rest } = placements;
 			placements = rest;
 		}
@@ -106,6 +118,7 @@
 		const valid = !!dragging && !!preview?.valid;
 		if (dragging && preview?.valid) {
 			placements = { ...placements, [dragging.id]: { row: preview.row, col: preview.col } };
+			recordDraft({ format: 'configuration', value: placements, labels: Object.keys(placements).map((id) => byId(id).name) });
 		}
 		if (dragging) void playSfx(valid ? 'drop-valid' : 'drop-invalid');
 		dragging = null;
@@ -116,39 +129,98 @@
 
 	/** @param {number} row @param {number} col */
 	function cellState(row, col) {
-		if (!dragging || !preview) return '';
-		const covers = byId(dragging.id).cells.some(
-			([r, c]) => preview.row + r === row && preview.col + c === col
+		const active = dragging;
+		const target = preview;
+		if (!active || !target) return '';
+		const covers = byId(active.id).cells.some(
+			([r, c]) => target.row + r === row && target.col + c === col
 		);
-		return covers ? (preview.valid ? 'ok' : 'bad') : '';
+		return covers ? (target.valid ? 'ok' : 'bad') : '';
+	}
+
+	// Where to draw a placed piece's icon: the occupied cell nearest the middle
+	// of its footprint.
+	//
+	// The artwork used to be stretched across the whole bounding box and then
+	// masked to the occupied cells. That kept ink from spilling into empty
+	// squares, but on the L, S and plus shapes it sliced the drawing into
+	// unreadable fragments — the sprites are composed for a rectangle, and half
+	// of each one fell in a cell that is not part of the piece. Drawing a single
+	// cell-sized icon instead is always legible and can never overhang a
+	// neighbour; the bordered tiles carry the shape, which is what the puzzle
+	// actually needs them to do.
+	/** @param {{cells: number[][]}} item */
+	function iconSpot(item) {
+		const mid = item.cells.reduce((a, [r, c]) => [a[0] + r / item.cells.length, a[1] + c / item.cells.length], [0, 0]);
+		let best = item.cells[0];
+		let bestD = Infinity;
+		for (const [r, c] of item.cells) {
+			const d = (r - mid[0]) ** 2 + (c - mid[1]) ** 2;
+			if (d < bestD) { bestD = d; best = [r, c]; }
+		}
+		return best;
 	}
 
 	function leave() {
 		if (committed) return;
 		committed = true;
-		pack.items = Object.keys(placements);
+		box.items = Object.keys(placements);
+		recordDraft({
+			format: 'configuration',
+			value: placements,
+			labels: box.items.map((id) => byId(id).name)
+		});
+
+		// The belongings still score — what someone chooses to save when they
+		// think they must choose is worth reading.
 		/** @type {Record<string, number>} */
 		const total = {};
 		for (const id of Object.keys(placements)) {
 			for (const [k, v] of Object.entries(byId(id).score)) total[k] = (total[k] ?? 0) + v;
 		}
+
+		// …but the puzzle scores on top, and harder, because it is the part with
+		// a right answer. Filling the grid completely is not luck: it takes
+		// noticing that everything fits, and then staying with it.
+		const filled = usedCells / (ROWS * COLS);
+		const add = (/** @type {string} */ axis, /** @type {number} */ n) =>
+			(total[axis] = (total[axis] ?? 0) + n);
+		if (filled === 1) {
+			add('scope', -3);
+			add('creative', 3);
+			add('tempo', -2);
+		} else if (filled >= 0.85) {
+			add('scope', -2);
+			add('creative', 2);
+			add('tempo', -1);
+		} else if (filled >= 0.6) {
+			add('creative', 1);
+		} else if (filled <= 0.35) {
+			// Barely engaged with it. Broad strokes, quick exit.
+			add('scope', 2);
+			add('tempo', 2);
+		}
+		// Keep any one question from dominating an axis.
+		for (const k of Object.keys(total)) total[k] = Math.max(-3, Math.min(3, total[k]));
+
 		setTimeout(() => onAnswer(total), 1100);
 	}
 </script>
 
-<div class="backpack">
+<div class="movebox">
 	<p class="premise">
-		The zombie apocalypse came and went. Most people didn't make it — you're one of the few
-		survivors, roaming a desolate world, looking for the others.
+		It has been a hard few months, and it ends with you having to be out of the apartment by
+		tonight. A friend is driving over. There is room in the car for one box.
 	</p>
 	<h2><SplitText text={PROMPT} stagger={40} delay={0} /></h2>
 	<hr class="rule" style="animation-delay: {seq.rule}ms" />
 
 	<div class="layout">
 		<div class="pack">
-			<p class="pack-label">Backpack — {usedCells} of {ROWS * COLS} slots</p>
+			<p class="pack-label">The box — {usedCells} of {ROWS * COLS} slots</p>
 			<div class="grid" bind:this={gridEl}>
 				{#each Array(ROWS * COLS) as _, i}
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
 					<div
 						class="cell {cellState(Math.floor(i / COLS), i % COLS)}"
 					></div>
@@ -156,31 +228,45 @@
 				{#each Object.entries(placements) as [id, at] (id)}
 					{@const item = byId(id)}
 					{@const b = bbox(item)}
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
 					<div
 						class="placed"
 						style="--r: {at.row}; --c: {at.col}; --h: {b.h}; --w: {b.w};"
 						title={item.name}
 						onpointerdown={(e) => startDrag(e, id)}
 					>
-						{@html item.svg}
+						<!-- One bordered tile per occupied cell: once several pieces sit
+						     side by side, the outline is the only thing separating one
+						     belonging from the next. -->
+						{#each item.cells as [cr, cc]}
+							<span class="tile" style="--tr: {cr}; --tc: {cc};"></span>
+						{/each}
+						<span class="art" style="--ar: {iconSpot(item)[0]}; --ac: {iconSpot(item)[1]};"
+							>{@html item.svg}</span
+						>
 					</div>
 				{/each}
 			</div>
 		</div>
 
 		<div class="supply">
-			<p class="pack-label">On the shelf</p>
+			<p class="pack-label">Still in the flat</p>
 			<div class="pool">
 				{#each pooled as item (item.id)}
 					{@const b = bbox(item)}
-					<div class="pool-item" style="--h: {b.h}; --w: {b.w};">
-						<div class="pool-sprite" title={item.name} onpointerdown={(e) => startDrag(e, item.id)}>
+					<div class="pool-item" data-reader-option={item.name} style="--h: {b.h}; --w: {b.w};">
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<div
+							class="pool-sprite"
+							title={item.name}
+							onpointerdown={(e) => startDrag(e, item.id)}
+						>
 							{#each item.cells as [r, c]}
 								<span class="mini-cell" style="--mr: {r}; --mc: {c};"></span>
 							{/each}
 							<span class="sprite-art">{@html item.svg}</span>
 						</div>
-						<span class="caption">{item.name}</span>
+						<span class="caption" data-reader-label>{item.name}</span>
 					</div>
 				{/each}
 				{#if pooled.length === 0}
@@ -201,14 +287,14 @@
 		</div>
 	{/if}
 
-	<button class="leave" onclick={leave} disabled={committed} style="animation-delay: {seq.leave}ms">
-		<span class="leave-label">{committed ? 'You sling the pack and run.' : 'Grab it and go'}</span>
+	<button class="leave" data-answer-submit onclick={leave} disabled={committed} style="animation-delay: {seq.leave}ms">
+		<span class="leave-label">{committed ? 'You tape the box shut.' : 'That\u2019s everything'}</span>
 	</button>
 </div>
 
 <style>
-	.backpack {
-		--cell: 3.4rem;
+	.movebox {
+		--cell: 2.5rem;
 		--gap: 6px;
 	}
 	.premise {
@@ -224,14 +310,17 @@
 		font-weight: 600;
 		line-height: 1.3;
 	}
-	.backpack > hr {
+	.movebox > hr {
 		margin: 0 0 1.5rem;
 		animation: draw 0.5s 0.15s both;
 	}
+	/* Column, not row: at eight cells wide the grid takes the full card, so the
+	   pile of remaining belongings sits underneath it rather than beside. */
 	.layout {
 		display: flex;
-		gap: 2rem;
-		align-items: flex-start;
+		flex-direction: column;
+		gap: 1.5rem;
+		align-items: stretch;
 		margin-bottom: 1.75rem;
 		animation: rise 0.42s both;
 	}
@@ -245,13 +334,20 @@
 	.grid {
 		position: relative;
 		display: grid;
-		grid-template-columns: repeat(4, var(--cell));
-		grid-template-rows: repeat(3, var(--cell));
+		grid-template-columns: repeat(8, var(--cell));
+		grid-template-rows: repeat(6, var(--cell));
 		gap: var(--gap);
 		padding: var(--gap);
 		border: 1px solid var(--rule);
 		background: var(--accent-soft);
 		touch-action: none;
+		/* The columns are a fixed size, so without this the box stretches to the
+		   full card width and draws a border around empty space to the right of
+		   the last column — and worse, the drop-target maths in `cellAt()` divides
+		   the element's width by COLS, so a stretched box would map pointer
+		   positions to the wrong column. */
+		width: max-content;
+		margin: 0 auto;
 	}
 	.cell {
 		border: 1px dashed var(--rule);
@@ -267,13 +363,37 @@
 		border-style: solid;
 		border-color: #a08880;
 	}
+	.tile {
+		position: absolute;
+		left: calc(var(--tc) * (var(--cell) + var(--gap)));
+		top: calc(var(--tr) * (var(--cell) + var(--gap)));
+		width: var(--cell);
+		height: var(--cell);
+		background: var(--surface);
+		border: 1px solid var(--ink);
+		border-radius: 2px;
+	}
+	.art {
+		position: absolute;
+		left: calc(var(--ac) * (var(--cell) + var(--gap)));
+		top: calc(var(--ar) * (var(--cell) + var(--gap)));
+		width: var(--cell);
+		height: var(--cell);
+		padding: 0.18rem;
+		display: block;
+		pointer-events: none;
+	}
+	.art :global(svg) {
+		width: 100%;
+		height: 100%;
+		display: block;
+	}
 	.placed {
 		position: absolute;
 		left: calc(var(--gap) + var(--c) * (var(--cell) + var(--gap)));
 		top: calc(var(--gap) + var(--r) * (var(--cell) + var(--gap)));
 		width: calc(var(--w) * var(--cell) + (var(--w) - 1) * var(--gap));
 		height: calc(var(--h) * var(--cell) + (var(--h) - 1) * var(--gap));
-		padding: 0.3rem;
 		color: var(--ink);
 		cursor: grab;
 		touch-action: none;
@@ -379,7 +499,7 @@
 		position: relative;
 	}
 	@media (max-width: 640px) {
-		.backpack {
+		.movebox {
 			--cell: 3rem;
 		}
 		.layout {

@@ -19,6 +19,8 @@
 	import SplitText from '$lib/SplitText.svelte';
 	import { cascade } from '$lib/reveal.js';
 	import { playSfx } from '$lib/audio/audio.svelte.js';
+	import { recordDraft } from '$lib/questions/metrics.svelte.js';
+	import SubmitAnswer from './SubmitAnswer.svelte';
 
 	// `premise` is optional scene-setting shown above the prompt — used by lore
 	// arc questions (see docs/lore.md); plain questions just omit it.
@@ -68,6 +70,11 @@
 		const [item] = next.splice(from, 1);
 		next.splice(to, 0, item);
 		order = next;
+		recordDraft({
+			format: 'ranking',
+			value: order.map((item) => item.id),
+			labels: order.map((item) => item.label)
+		});
 	}
 
 	// SnapSort has already moved the DOM node; this brings `order` back in sync so
@@ -102,6 +109,7 @@
 	function commit() {
 		if (committed) return;
 		committed = true;
+		recordDraft({ format: 'ranking', value: order.map((item) => item.id), labels: order.map((item) => item.label) });
 		setTimeout(() => onAnswer(toScore(order)), 450);
 	}
 </script>
@@ -131,7 +139,7 @@
 						<span class="rank">{i + 1}</span>
 						<Handle className="grip">
 							<span class="grip-lines" aria-hidden="true"></span>
-							<span class="label">{item.label}</span>
+							<span class="label" data-reader-option={item.label}><span data-reader-label>{item.label}</span></span>
 						</Handle>
 						<span class="arrows">
 							<button
@@ -151,9 +159,7 @@
 		</Engine>
 	</div>
 
-	<button class="next" onclick={commit} disabled={committed} style="animation-delay: {seq.next}ms"
-		>Next →</button
-	>
+	<SubmitAnswer {committed} delay={seq.next} onsubmit={commit} />
 </div>
 
 <style>
@@ -325,27 +331,6 @@
 		cursor: default;
 	}
 
-	.next {
-		animation: rise 0.42s both;
-		display: block;
-		margin-left: auto;
-		padding: 0.75rem 1.5rem;
-		background: var(--ink);
-		color: var(--bg);
-		border: none;
-		border-radius: var(--radius);
-		font: inherit;
-		font-weight: 600;
-		cursor: pointer;
-		transition: background 0.25s ease;
-	}
-	.next:hover:not(:disabled) {
-		background: #0f0f0f;
-	}
-	.next:disabled {
-		opacity: 0.6;
-		cursor: default;
-	}
 
 	@media (max-width: 520px) {
 		.list :global(.snapsort-handle.grip) {
