@@ -252,6 +252,8 @@
 		position: relative;
 		height: 2.75rem;
 		touch-action: none;
+		-webkit-user-select: none;
+		user-select: none;
 	}
 	.track {
 		position: absolute;

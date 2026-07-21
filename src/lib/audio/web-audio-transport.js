@@ -10,7 +10,7 @@ import { configureAudioSession } from './audio-session.js';
 export const MUSIC_ASSETS = Object.freeze({
 	default: { path: '/audio/music/puzzle-chamber-loop.mp3', loop: true, rateSensitive: true },
 	asteroid: { path: '/audio/music/asteroid-countdown.mp3', loop: false, rateSensitive: false },
-	report: { path: '/audio/music/final-report-loop.mp3', loop: true, rateSensitive: false }
+	report: { path: '/audio/music/victorian-victory.mp3', loop: true, rateSensitive: false }
 });
 
 export const SFX_ASSETS = Object.freeze({
@@ -34,6 +34,22 @@ export const SFX_ASSETS = Object.freeze({
 	'asteroid-impact': '/audio/sfx/asteroid-impact.mp3',
 	'result-reveal': '/audio/sfx/result-reveal.mp3'
 });
+
+// The six bands the equalizer question offers, in fader order. Exported so the
+// question renders exactly the filters that exist — six labels and six nodes
+// that could drift apart is the one bug this feature can't detect at runtime.
+// Shelves on the endpoints, not peaks: dragging Sub or Treble should move
+// everything below/above it, not poke a narrow hole near the edge of hearing.
+export const MUSIC_EQ_BANDS = Object.freeze([
+	{ label: 'Sub', type: 'lowshelf', frequency: 60 },
+	{ label: 'Bass', type: 'peaking', frequency: 150, Q: 1 },
+	{ label: 'Low mid', type: 'peaking', frequency: 400, Q: 1 },
+	{ label: 'Mid', type: 'peaking', frequency: 1000, Q: 1 },
+	{ label: 'Presence', type: 'peaking', frequency: 3000, Q: 1 },
+	{ label: 'Treble', type: 'highshelf', frequency: 8000 }
+]);
+
+export const MUSIC_EQ_LIMIT_DB = 12;
 
 const CORE_SFX = [
 	'ui-tap',
@@ -76,6 +92,13 @@ function safeDisconnect(node) {
 	} catch {
 		// Disconnecting an already-disconnected Safari node is harmless.
 	}
+}
+
+/** @param {unknown} value */
+function clampEqGain(value) {
+	const db = Number(value);
+	if (!Number.isFinite(db)) return 0;
+	return Math.max(-MUSIC_EQ_LIMIT_DB, Math.min(MUSIC_EQ_LIMIT_DB, db));
 }
 
 /** @param {AudioParam} param @param {number} now @param {number} value */
@@ -183,6 +206,13 @@ export class WebAudioTransport {
 		this.sfxBus = null;
 		/** @type {DynamicsCompressorNode | null} */
 		this.limiter = null;
+		// The taker's answer to the equalizer question, in dB per band. Held on
+		// the instance rather than in the graph so it outlives any context: a
+		// recovery rebuild reads it back in _ensureContext, and an answer given
+		// before audio is unlocked still lands when the context finally exists.
+		this.eqGains = MUSIC_EQ_BANDS.map(() => 0);
+		/** @type {BiquadFilterNode[] | null} */
+		this.eqNodes = null;
 		/** @type {Map<string, ArrayBuffer>} */
 		this.encoded = new Map();
 		/** @type {Map<string, Promise<ArrayBuffer | null>>} */
@@ -318,6 +348,8 @@ export class WebAudioTransport {
 		let sfxBus = null;
 		/** @type {DynamicsCompressorNode | null} */
 		let limiter = null;
+		/** @type {BiquadFilterNode[] | null} */
+		let eqNodes = null;
 		/** @type {(() => void) | null} */
 		let contextListener = null;
 		const generation = this.generation + 1;
@@ -337,7 +369,18 @@ export class WebAudioTransport {
 			masterGain.gain.value = this.muted ? 0 : 1;
 			musicBus.gain.value = 1;
 			sfxBus.gain.value = 1;
-			musicBus.connect(limiter);
+			// The equalizer sits on the music bus, ahead of the limiter — so it
+			// colours every track without any per-voice re-application, and so a
+			// boosted curve still meets clip protection on the way out. SFX join
+			// downstream of both and stay uncoloured, which is deliberate: the
+			// answer should shape the score, not the taker's own button clicks.
+			eqNodes = this._createEqNodes(context);
+			let musicTail = /** @type {AudioNode} */ (musicBus);
+			for (const filter of eqNodes ?? []) {
+				musicTail.connect(filter);
+				musicTail = filter;
+			}
+			musicTail.connect(limiter);
 			limiter.connect(masterGain);
 			sfxBus.connect(masterGain);
 			masterGain.connect(context.destination);
@@ -357,6 +400,7 @@ export class WebAudioTransport {
 			if (context && contextListener)
 				context.removeEventListener?.('statechange', contextListener);
 			safeDisconnect(musicBus);
+			for (const filter of eqNodes ?? []) safeDisconnect(filter);
 			safeDisconnect(sfxBus);
 			safeDisconnect(limiter);
 			safeDisconnect(masterGain);
@@ -371,9 +415,29 @@ export class WebAudioTransport {
 		this.musicBus = musicBus;
 		this.sfxBus = sfxBus;
 		this.limiter = limiter;
+		this.eqNodes = eqNodes;
 		this.contextListener = contextListener;
 		this.onTrace('context-created', { generation });
 		return context;
+	}
+
+	/**
+	 * Builds the band filters for a freshly created context, seeded from the
+	 * gains already on the instance. Returns null when the context cannot make
+	 * biquads at all — the caller then wires the bus straight to the limiter, so
+	 * the quiz stays playable and only loses the colouring.
+	 * @param {AudioContext} context
+	 */
+	_createEqNodes(context) {
+		if (typeof context.createBiquadFilter !== 'function') return null;
+		return MUSIC_EQ_BANDS.map((band, index) => {
+			const filter = context.createBiquadFilter();
+			filter.type = /** @type {BiquadFilterType} */ (band.type);
+			filter.frequency.value = band.frequency;
+			if (band.Q !== undefined && filter.Q) filter.Q.value = band.Q;
+			filter.gain.value = clampEqGain(this.eqGains[index]);
+			return filter;
+		});
 	}
 
 	/** @param {AudioContext} context */
@@ -633,6 +697,38 @@ export class WebAudioTransport {
 	clearDuck(key) {
 		this.ducks.delete(key);
 		this._updateMusicGain();
+	}
+
+	/**
+	 * Applies the equalizer answer to the music bus. Safe to call with no
+	 * context, no music playing, or sound switched off: the gains are stored
+	 * either way and _ensureContext seeds the filters from them, so an answer
+	 * given before the first gesture is honoured the moment audio unlocks.
+	 *
+	 * The curve is applied raw — no makeup gain, no partial blend. A maxed EQ is
+	 * meant to sound maxed; the limiter downstream is what keeps that from
+	 * becoming an actual clipping blast.
+	 *
+	 * @param {number[]} gainsDb @param {number} [rampMs]
+	 */
+	setMusicEq(gainsDb, rampMs = 400) {
+		if (this.disposed) return;
+		const gains = Array.isArray(gainsDb) ? gainsDb : [];
+		this.eqGains = MUSIC_EQ_BANDS.map((_, index) => clampEqGain(gains[index]));
+		this.onTrace('music-eq', { gains: this.eqGains });
+
+		const context = this.context;
+		const nodes = this.eqNodes;
+		if (!context || !nodes) return;
+		const now = context.currentTime;
+		const seconds = Math.max(0, Number(rampMs) || 0) / 1000;
+		nodes.forEach((filter, index) => {
+			const target = this.eqGains[index];
+			const param = filter.gain;
+			holdParam(param, now, param.value);
+			if (seconds <= 0) param.setValueAtTime(target, now);
+			else param.linearRampToValueAtTime(target, now + seconds);
+		});
 	}
 
 	/** @param {number} [duration] */
@@ -1031,6 +1127,7 @@ export class WebAudioTransport {
 		this.pendingDecodes.clear();
 		this.preloadScheduled = false;
 		safeDisconnect(this.musicBus);
+		for (const filter of this.eqNodes ?? []) safeDisconnect(filter);
 		safeDisconnect(this.sfxBus);
 		safeDisconnect(this.limiter);
 		safeDisconnect(this.masterGain);
@@ -1039,6 +1136,9 @@ export class WebAudioTransport {
 		this.musicBus = null;
 		this.sfxBus = null;
 		this.limiter = null;
+		// eqNodes belong to the dead context; eqGains do not. Keeping the gains
+		// is what makes the taker's answer survive a recovery rebuild.
+		this.eqNodes = null;
 		this.contextListener = null;
 		const closing = oldContext ? this._closeContext(oldContext, 'recovery') : Promise.resolve(true);
 
@@ -1084,6 +1184,7 @@ export class WebAudioTransport {
 		if (this.session && this.sessionListener)
 			/** @type {any} */ (this.session).removeEventListener?.('statechange', this.sessionListener);
 		safeDisconnect(this.musicBus);
+		for (const filter of this.eqNodes ?? []) safeDisconnect(filter);
 		safeDisconnect(this.sfxBus);
 		safeDisconnect(this.limiter);
 		safeDisconnect(this.masterGain);
@@ -1092,6 +1193,7 @@ export class WebAudioTransport {
 		this.musicBus = null;
 		this.sfxBus = null;
 		this.limiter = null;
+		this.eqNodes = null;
 		this.contextListener = null;
 		this.session = null;
 		this.sessionListener = null;

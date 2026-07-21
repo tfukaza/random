@@ -9,11 +9,23 @@
 	// impulsive nuclear option, a lawyer is the patient one. Both are a total
 	// loss of proportion, which is what `scope` toward detail measures here.
 	import PickList from './PickList.svelte';
+	import Coupon from '$lib/Coupon.svelte';
+	import { tuckCoupon } from './couponState.svelte.js';
 	let { onAnswer } = $props();
 
 	const premise =
 		"It's the weekend and you've gone out to dinner with a friend. The bill comes, and you pull out the coupon you'd been saving for this — which, you now notice, expired yesterday.";
 	const prompt = 'What do you do?';
+	// Index 0 is the only answer that leaves the coupon unused — every other one
+	// tries to use it. Picking it tucks the coupon under the paper stack for the
+	// rest of the run (see couponState / CouponSlip): you put it away, and there
+	// it stays.
+	const PUT_AWAY = 0;
+	/** @param {number} i */
+	function record(i) {
+		if (i === PUT_AWAY) tuckCoupon();
+	}
+
 	const options = [
 		{
 			label: 'Say nothing, put it away, and pay full price',
@@ -39,4 +51,15 @@
 	];
 </script>
 
-<PickList {premise} {prompt} {options} {onAnswer} />
+<PickList {premise} {prompt} {options} {onAnswer} onSubmit={record}>
+	<div class="coupon-frame"><Coupon /></div>
+</PickList>
+
+<style>
+	/* The coupon itself, sat between the premise and the choices — the object the
+	   whole question is about. Held to a sensible width and centred. */
+	.coupon-frame {
+		max-width: 22rem;
+		margin: 0 auto 2rem;
+	}
+</style>

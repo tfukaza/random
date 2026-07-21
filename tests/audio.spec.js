@@ -4,7 +4,7 @@ import { expect, test } from '@playwright/test';
 const AUDIO_ASSETS = [
 	'/audio/music/puzzle-chamber-loop.mp3',
 	'/audio/music/asteroid-countdown.mp3',
-	'/audio/music/final-report-loop.mp3',
+	'/audio/music/victorian-victory.mp3',
 	...[
 		'ui-tap',
 		'ui-toggle',

@@ -5,6 +5,7 @@
 		markReady,
 		recordEvent,
 		recordInteraction,
+		recordRevision,
 		recordSubmitAttempt,
 		recordVisibility
 	} from '$lib/questions/metrics.svelte.js';
@@ -34,9 +35,20 @@
 	}
 
 	function keyDown(/** @type {KeyboardEvent} */ event) {
-		if (!answerTarget(event.target)) return;
+		const target = answerTarget(event.target);
+		if (!target) return;
 		if (['Tab', 'Shift', 'Alt', 'Control', 'Meta'].includes(event.key)) return;
 		recordInteraction('keyboard');
+		if (
+			event.key === 'Backspace' &&
+			(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) &&
+			!target.disabled &&
+			!target.readOnly
+		) {
+			recordRevision('text-backspace', {
+				control: target.getAttribute('data-answer-id') ?? target.getAttribute('aria-label') ?? 'text'
+			});
+		}
 	}
 
 	function clickCapture(/** @type {MouseEvent} */ event) {
@@ -45,7 +57,7 @@
 		// Capture runs before the component handler, which matters when that
 		// handler synchronously advances and unmounts this question.
 		if (target.matches('[data-answer-submit], button.next, button.submit')) {
-			recordSubmitAttempt();
+			recordSubmitAttempt(!(target instanceof HTMLButtonElement) || !target.disabled);
 		}
 	}
 

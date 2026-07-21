@@ -1,8 +1,9 @@
 // The shareable verdict — a Wordle-style block of text the taker can paste
 // anywhere. Two design constraints, both borrowed from Wordle:
 //
-//   1. It has to survive plain text. No markup, no links, no HTML — just
-//      characters, so it looks the same in a DM as in a tweet.
+//   1. It has to survive plain text. No markup, no HTML — just characters, so
+//      it looks the same in a DM as in a tweet. The one exception is the bare
+//      site URL on the last line, so a pasted result leads back here.
 //   2. It has to be legible in a PROPORTIONAL font. Nothing here relies on
 //      monospace alignment: every row is the same character count with the
 //      same emoji budget (two), so the bars line up in practice even where
@@ -12,6 +13,9 @@
 // not the quiz being pleased with itself. No "I got…", no exclamation marks.
 
 import { CURRENT_VERSION } from '$lib/releases.js';
+
+/** Where a pasted result points its readers. */
+const SITE_URL = 'https://random-tau-two.vercel.app/';
 
 /** Cells either side of the centre line. */
 const CELLS = 5;
@@ -51,12 +55,14 @@ export function buildShareText(persona, axes) {
 	});
 
 	return [
-		'What kind of person are you?',
+		'The Standardized Evaluation of Emotional Disposition',
 		`Test version ${CURRENT_VERSION}`,
 		'',
 		`Type ${persona.code}`,
 		`${persona.plant.common} — ${persona.plant.scientific}`,
 		'',
-		...rows
+		...rows,
+		'',
+		SITE_URL
 	].join('\n');
 }

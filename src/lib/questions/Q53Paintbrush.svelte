@@ -6,9 +6,15 @@
 	// THE FIRST OPTION IS THE MECHANIC. This quiz is presented as a stack of
 	// paper, so shoving a wet brush under it starts paint spreading out from
 	// beneath the stack — see PaintPool.svelte — and, unlike everything else in
-	// the quiz, it never goes away. `onPick` fires synchronously on click,
-	// before PickList's 520ms advance, so the first seep appears on the card the
-	// taker is still looking at.
+	// the quiz, it never goes away.
+	//
+	// Because it never goes away, it must fire on SUBMIT, not on selection. This
+	// used to hang off `onPick`, which fires on every click: selecting the stack,
+	// thinking better of it and submitting the bin still left paint creeping out
+	// from under the card for the rest of the quiz — a permanent consequence for
+	// an answer the taker never gave. `onSubmit` runs synchronously when the
+	// button is pressed, ahead of PickList's 520ms advance, so the first seep
+	// still appears on the card the taker is looking at.
 	//
 	// Honesty is deliberately NOT scored here. The premise already establishes
 	// that you are concealing this; every option conceals, so it cannot
@@ -50,4 +56,4 @@
 	}
 </script>
 
-<PickList {premise} {prompt} {options} {onAnswer} onPick={record} />
+<PickList {premise} {prompt} {options} {onAnswer} onSubmit={record} />

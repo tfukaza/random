@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { axisSummary } from '$lib/scoring.js';
 	import { typeOf } from '$lib/personalities.js';
+	import { reportOverrideFor } from '$lib/reportOverrides.js';
 	import { buildShareText } from '$lib/shareText.js';
 	import SplitText from '$lib/SplitText.svelte';
 	import CountUp from '$lib/CountUp.svelte';
@@ -16,7 +17,7 @@
 	});
 
 	// The headline identity: one of the 128 seven-axis types.
-	const persona = $derived(typeOf(scores));
+	const persona = $derived(reportOverrideFor(scores) ?? typeOf(scores));
 
 	// Temperament spectra: seven signed axes, each rendered as a diverging bar
 	// from a center-zero line. Shared scale so bar lengths are comparable.

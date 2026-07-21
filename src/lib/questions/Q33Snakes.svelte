@@ -4,27 +4,54 @@
 	// segments (black → dark → white → light) that peripheral vision misreads
 	// as rotation, with adjacent rings reversed so they seem to counter-rotate.
 	// The trap: unlike the textbook version, these discs genuinely ARE rotating —
-	// but only in bursts. Once every three seconds each disc turns 10° over a
-	// single second (a true 10°/s creep), then holds perfectly still. Anyone who
+	// but only in bursts. One disc at a time turns up to 3° over a single second,
+	// with subtler rates for takers who made the strongest detail claims, then
+	// the board holds before a non-adjacent disc takes the next turn. Anyone who
 	// recognises the famous illusion will smugly answer "they're not moving" and
-	// be wrong, and the four numeric options force a commitment to both a RATE
-	// and a PATTERN. "10° a second, but only occasionally" is right about each.
+	// be wrong. The two moving options use the exact authored rate, forcing a
+	// commitment to whether that movement is continuous or occasional.
+	import { onMount, tick } from 'svelte';
 	import PickList from './PickList.svelte';
+	import { latestResponse } from './metrics.svelte.js';
 	import { sharpenAgainstDetailClaim } from './detailClaim.js';
+	import {
+		areAdjacentCircles,
+		nextEligibleCircle,
+		rotationRateForDetail
+	} from './q33SnakesModel.js';
 	let { onAnswer } = $props();
 
 	// Post-answer reveal (same mechanic family as Q22): once an option is
-	// picked, every disc but the center one fades away, a red needle pokes out
+	// picked, every disc but one inner disc fades away, a red needle pokes out
 	// of the survivor disc, and a red contrail arc accumulates behind the needle's
-	// tip as it turns — the 6.2s reveal spans two full creep-and-hold cycles, so
-	// the taker watches it happen twice — before the quiz moves on.
+	// tip as it turns. During the 6.2s reveal, short featured-disc bursts alternate with
+	// safely distant hidden corners so the taker watches the proof several times.
 	let revealed = $state(false);
 	/** @type {HTMLElement[]} */
 	let spinEls = $state([]);
 	let trailA0 = $state(0);
 	let trailSweep = $state(0);
+	let angles = $state(Array(16).fill(0));
 	/** @type {number} */
 	let rafId;
+	/** @type {number | undefined} */
+	let burstTimer;
+	/** @type {Animation | null} */
+	let activeAnimation = null;
+	let lastRotated = /** @type {number | null} */ (null);
+	let activeIndex = /** @type {number | null} */ (null);
+	let hoveredIndex = $state(/** @type {number | null} */ (null));
+	let selectedIndices = $state(new Set());
+	let revealCorner = 0;
+	let stopped = false;
+
+	const detailLevel = latestResponse('detail-claim')?.value;
+	const BURST_DEGREES = rotationRateForDetail(detailLevel);
+	const BURST_MS = 1000;
+	const HOLD_MS = 2000;
+	const REVEAL_HOLD_MS = 250;
+	const FEATURED_INDEX = 5;
+	const CORNERS = [0, 3, 12, 15];
 
 	/** @param {HTMLElement} el */
 	function readAngle(el) {
@@ -32,11 +59,11 @@
 		return r === 'none' ? 0 : parseFloat(r);
 	}
 
-	// Both 10° answers count as having seen the motion — they got the rate right
+	// Both moving answers count as having seen the motion — they got the rate right
 	// and at worst the pattern wrong, and the fully-correct one already scores
-	// better on its own merits. A miss is underestimating tenfold or, worst,
+	// better on its own merits. A miss is substantially underestimating or, worst,
 	// declaring a visibly turning disc to be stationary.
-	const DETECTED = new Set([2, 3]);
+	const DETECTED = new Set([0, 1]);
 	let pickedIndex = -1;
 
 	/** @param {Record<string, number>} score */
@@ -45,9 +72,10 @@
 		// adjusted delta to onAnswer 6.2s later along with everything else.
 		score = sharpenAgainstDetailClaim(score, !DETECTED.has(pickedIndex));
 		revealed = true;
-		const spin = spinEls[4];
+		restartForReveal();
+		const spin = spinEls[FEATURED_INDEX];
 		if (spin) {
-			// Sample the center disc's live animated angle every frame; the
+			// Sample the featured disc's live animated angle every frame; the
 			// contrail is drawn from the angle at reveal time to wherever the
 			// needle is now, so it stays exactly in step with the CSS animation.
 			trailA0 = readAngle(spin);
@@ -63,80 +91,142 @@
 		}, 6200);
 	}
 
-	$effect(() => () => cancelAnimationFrame(rafId));
+	/** @param {number | null} previous */
+	function revealNext(previous) {
+		// Alternate the visible featured disc with corners. If the last completed
+		// disc was an edge neighbor of it, insert a safe corner first.
+		const excluded = excludedIndices();
+		if (
+			!excluded.has(FEATURED_INDEX) &&
+			previous !== FEATURED_INDEX &&
+			previous !== null &&
+			!areAdjacentCircles(previous, FEATURED_INDEX)
+		) return FEATURED_INDEX;
+		for (let n = 0; n < CORNERS.length; n += 1) {
+			const candidate = CORNERS[(revealCorner + n) % CORNERS.length];
+			if (
+				!excluded.has(candidate) &&
+				candidate !== previous &&
+				!areAdjacentCircles(previous ?? -1, candidate)
+			) {
+				revealCorner = (revealCorner + n + 1) % CORNERS.length;
+				return candidate;
+			}
+		}
+		return nextEligibleCircle(previous, excluded);
+	}
+
+	function excludedIndices() {
+		const excluded = new Set(selectedIndices);
+		if (hoveredIndex !== null) excluded.add(hoveredIndex);
+		return excluded;
+	}
+
+	/** @param {number} delay */
+	function scheduleBurst(delay) {
+		clearTimeout(burstTimer);
+		burstTimer = window.setTimeout(startBurst, delay);
+	}
+
+	function startBurst() {
+		if (stopped) return;
+		const excluded = excludedIndices();
+		const index = revealed
+			? revealNext(lastRotated)
+			: nextEligibleCircle(lastRotated, excluded);
+		if (index < 0 || excluded.has(index)) {
+			scheduleBurst(HOLD_MS);
+			return;
+		}
+		const element = spinEls[index];
+		if (!element || typeof element.animate !== 'function') {
+			scheduleBurst(HOLD_MS);
+			return;
+		}
+		const from = angles[index];
+		const to = from + (discs[index].flip ? -BURST_DEGREES : BURST_DEGREES);
+		const animation = element.animate(
+			[{ rotate: `${from}deg` }, { rotate: `${to}deg` }],
+			{ duration: BURST_MS, easing: 'ease-in-out', fill: 'forwards' }
+		);
+		activeAnimation = animation;
+		activeIndex = index;
+		animation.onfinish = async () => {
+			if (stopped || activeAnimation !== animation) return;
+			angles[index] = to;
+			lastRotated = index;
+			await tick();
+			animation.cancel();
+			activeAnimation = null;
+			activeIndex = null;
+			scheduleBurst(revealed ? REVEAL_HOLD_MS : HOLD_MS);
+		};
+	}
+
+	function restartForReveal() {
+		clearTimeout(burstTimer);
+		activeAnimation?.cancel();
+		activeAnimation = null;
+		activeIndex = null;
+		scheduleBurst(0);
+	}
+
+	/** @param {number} index */
+	function excludeActive(index) {
+		if (activeIndex !== index) return;
+		activeAnimation?.cancel();
+		activeAnimation = null;
+		activeIndex = null;
+		scheduleBurst(0);
+	}
+
+	/** @param {number} index */
+	function hoverCircle(index) {
+		hoveredIndex = index;
+		excludeActive(index);
+	}
+
+	/** @param {number} index */
+	function leaveCircle(index) {
+		if (hoveredIndex === index) hoveredIndex = null;
+	}
+
+	/** @param {number} index */
+	function toggleCircle(index) {
+		const next = new Set(selectedIndices);
+		if (next.has(index)) next.delete(index);
+		else next.add(index);
+		selectedIndices = next;
+		if (next.has(index)) excludeActive(index);
+	}
+
+	onMount(() => {
+		if (!matchMedia('(prefers-reduced-motion: reduce)').matches) scheduleBurst(0);
+		return () => {
+			stopped = true;
+			clearTimeout(burstTimer);
+			activeAnimation?.cancel();
+			cancelAnimationFrame(rafId);
+		};
+	});
 
 	const prompt = 'Look at the figure for a few seconds. How fast would you estimate it is moving?';
 	const options = [
-		{ label: '1° per second', score: { scope: 1 } },
-		// Right about the burst, wrong about the rate by a factor of ten.
-		{ label: '1° a second, but only occasionally', score: { scope: -1 } },
 		// Right about the rate, wrong about the burst.
-		{ label: '10° per second', score: { scope: -1 } },
+		{ label: `${BURST_DEGREES}°/s`, score: { scope: -1 } },
 		// The truth, and absurdly precise about it.
-		{ label: '10° a second, but only occasionally', score: { scope: -3 } },
+		{ label: `${BURST_DEGREES}°/s, but occasional`, score: { scope: -3 } },
 		// The smug illusion-spotter, pattern-matching the famous poster instead
 		// of looking at what is in front of them.
-		{ label: 'They’re not moving', score: { risk: -1, scope: 2 } }
+		{ label: 'Not moving', score: { risk: -1, scope: 2 } }
 	];
 
-	// Per-disc phase offsets so the nine discs don't read as copy-pasted.
-	const discs = Array.from({ length: 9 }, (_, i) => ({
+	// Per-disc phase offsets so the sixteen discs don't read as copy-pasted.
+	const discs = Array.from({ length: 16 }, (_, i) => ({
 		phase: (i * 47) % 360,
 		// Alternate which direction the outermost ring drifts, checkerboard-style.
-		flip: (Math.floor(i / 3) + i) % 2 === 1,
-		// Negative animation-delay staggers each disc's creep across the 3s
-		// cycle, in a scrambled order, so the motion ripples irregularly instead
-		// of all nine discs nudging in lockstep.
-		stagger: -(((i * 5) % 9) * 0.33)
+		flip: (Math.floor(i / 4) + i) % 2 === 1,
 	}));
-
-	// Piecewise-linear easing for the creep-and-hold motion, as ONE animation:
-	// each 3s cycle ramps 10° during its first second (a true 10°/s creep) and
-	// holds for the remaining 2s. A single animation keeps the accumulated angle
-	// continuous by construction — an earlier version layered two synced
-	// animations, which could land a frame apart at the cycle boundary and flash
-	// a visible jolt.
-	//
-	// The two magic numbers are both load-bearing:
-	//
-	//   600° total — a multiple of 24°, one period of the ring pattern, so the
-	//   wrap back to 0° is invisible.
-	//
-	//   60 cycles × 3s = 180s — the reveal samples the live computed angle every
-	//   frame (see readAngle) and draws the contrail from wherever the needle was
-	//   at reveal time, which only works while that angle grows monotonically. A
-	//   short loop would reset mid-reveal and collapse the trail, so the wrap is
-	//   pushed out to once every three minutes, far outside any plausible time
-	//   spent on this question.
-	const CYCLES = 60;
-	// Each burst EASES IN AND OUT rather than snapping into motion and stopping
-	// dead. `linear()` only interpolates straight lines between its stops, so the
-	// curve is drawn explicitly: STEPS points per burst following a raised
-	// cosine, which leaves and arrives at zero velocity.
-	//
-	// Consequence worth knowing — the burst still covers 10° in 1s, so the
-	// AVERAGE is still 10°/s and "10° a second, but only occasionally" is still
-	// the right answer. But the instantaneous PEAK is now ~15.7°/s (π/2 × the
-	// average, at the midpoint of each burst). Flattening the curve further would
-	// lower the peak; removing it entirely brings back the snap.
-	const STEPS = 8;
-	const MOVE = 1 / 3; // 1s of motion per 3s cycle
-	const ease = (() => {
-		const stops = ['0'];
-		for (let i = 0; i < CYCLES; i++) {
-			for (let k = 1; k <= STEPS; k++) {
-				const p = k / STEPS;
-				// Raised cosine: 0 → 1, with zero slope at both ends.
-				const eased = 0.5 - 0.5 * Math.cos(Math.PI * p);
-				const value = ((i + eased) / CYCLES).toFixed(5);
-				const at = (((i + MOVE * p) / CYCLES) * 100).toFixed(3);
-				stops.push(`${value} ${at}%`);
-			}
-			// …then hold this cycle's angle for the remaining two thirds.
-			stops.push(`${((i + 1) / CYCLES).toFixed(5)} ${(((i + 1) / CYCLES) * 100).toFixed(3)}%`);
-		}
-		return `linear(${stops.join(', ')})`;
-	})();
 </script>
 
 <PickList {prompt} {options} onAnswer={handleAnswer} onPick={(/** @type {number} */ i) => (pickedIndex = i)}>
@@ -144,27 +234,33 @@
 		<div
 			class="board"
 			class:revealed
+			data-burst-degrees={BURST_DEGREES}
 			role="img"
-			aria-label="Nine circles patterned like dartboards, rotating in slow bursts"
-			style="--ease: {ease}"
+			aria-label="Sixteen circles patterned like dartboards, rotating in slow bursts"
 		>
 			{#each discs as d, i}
-				<div
+				<button
+					type="button"
 					class="disc"
 					class:flip={d.flip}
-					class:center={i === 4}
-					style="--phase: {d.phase}deg; --stagger: {d.stagger}s"
+					class:featured={i === FEATURED_INDEX}
+					style="--phase: {d.phase}deg"
+					data-sfx="none"
+					aria-label="Circle {i + 1}"
+					onpointerenter={() => hoverCircle(i)}
+					onpointerleave={() => leaveCircle(i)}
+					onclick={() => toggleCircle(i)}
 				>
-					<div class="spin" bind:this={spinEls[i]}>
+					<div class="spin" bind:this={spinEls[i]} style="rotate: {angles[i]}deg">
 						<div class="ring r1"></div>
 						<div class="ring r2"></div>
 						<div class="ring r3"></div>
 						<div class="core"></div>
-						{#if i === 4}
+						{#if i === FEATURED_INDEX}
 							<div class="needle"></div>
 						{/if}
 					</div>
-					{#if i === 4}
+					{#if i === FEATURED_INDEX}
 						<div
 							class="trail"
 							style="--a0: {trailA0 + Math.min(trailSweep, 0)}deg; --sweep: {Math.abs(
@@ -172,7 +268,7 @@
 							)}deg"
 						></div>
 					{/if}
-				</div>
+				</button>
 			{/each}
 		</div>
 	</div>
@@ -185,42 +281,43 @@
 	}
 	.board {
 		display: grid;
-		grid-template-columns: repeat(3, 1fr);
-		gap: 0.6rem;
-		max-width: 480px;
+		grid-template-columns: repeat(4, 1fr);
+		gap: 0.5rem;
+		max-width: 520px;
 		margin: 0 auto;
 	}
 	.disc {
 		position: relative;
+		display: block;
+		width: 100%;
 		aspect-ratio: 1;
+		padding: 0;
+		background: transparent;
+		border: 0;
+		color: inherit;
 		--dir: 1;
+	}
+	.disc:focus-visible {
+		outline: 1px solid var(--rule);
+		outline-offset: 2px;
 	}
 	.disc.flip {
 		--dir: -1;
 	}
-	/* The rotation lives on this inner wrapper (not .disc) so the reveal's
-	   contrail overlay can sit around the disc without turning with it.
-	   180s = 60 creep-and-hold cycles of 3s; --ease (built in the script) shapes
-	   each cycle into a 1s x 10°/s glide followed by a 2s hold, covering 600° in
-	   total. See the note in the script for why both numbers are what they are. */
+	/* One Web Animation at a time owns rotation on this inner wrapper. Keeping
+	   the settled angle inline lets a finished burst hand off without a jump. */
 	.spin {
 		position: absolute;
 		inset: 0;
-		animation: turn 180s var(--ease, linear) infinite;
-		animation-delay: var(--stagger, 0s);
 	}
-	@keyframes turn {
-		to {
-			rotate: calc(var(--dir, 1) * 600deg);
-		}
-	}
-	/* Post-answer reveal: only the center disc survives, and its red needle
+	/* Post-answer reveal: only the featured inner disc survives, and its red needle
 	   makes the rotation impossible to write off as the illusion. */
 	.disc {
 		transition: opacity 0.6s ease;
 	}
-	.revealed .disc:not(.center) {
+	.revealed .disc:not(.featured) {
 		opacity: 0;
+		pointer-events: none;
 	}
 	.needle {
 		position: absolute;
@@ -257,12 +354,6 @@
 	}
 	.revealed .trail {
 		opacity: 1;
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.spin {
-			animation: none;
-		}
 	}
 
 	/* Each ring is a full circle; the smaller ring stacked on top covers its

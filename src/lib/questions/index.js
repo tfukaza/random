@@ -17,7 +17,6 @@
 // build a new .svelte component any way you like, register it, and slot its
 // id into `flowOrder`. No shared schema, no config engine.
 import Q1Party from './Q1Party.svelte';
-import Q2Decision from './Q2Decision.svelte';
 import Q3Recharge from './Q3Recharge.svelte';
 import Q7Coupon from './Q7Coupon.svelte';
 import Q9OneMeal from './Q9OneMeal.svelte';
@@ -36,9 +35,7 @@ import Q23Permission from './Q23Permission.svelte';
 import Q25Alphabet from './Q25Alphabet.svelte';
 import Q26MoveBox from './Q26MoveBox.svelte';
 import Q27Airport from './Q27Airport.svelte';
-import Q28Alignment from './Q28Alignment.svelte';
 import Q29Patience from './Q29Patience.svelte';
-import Q31Noise from './Q31Noise.svelte';
 import Q32Balance from './Q32Balance.svelte';
 import Q33Snakes from './Q33Snakes.svelte';
 import Q34Ranking from './Q34Ranking.svelte';
@@ -60,18 +57,19 @@ import Q55Detail from './Q55Detail.svelte';
 import Q56Terms from './Q56Terms.svelte';
 import Q57Coffee from './Q57Coffee.svelte';
 import Q58CoffeePrompt from './Q58CoffeePrompt.svelte';
-import Q62MetricsAudit from './Q62MetricsAudit.svelte';
+import Q69PointerHeatmap from './Q69PointerHeatmap.svelte';
 import Q63Birthdate from './Q63Birthdate.svelte';
 import Q64FavouriteFood from './Q64FavouriteFood.svelte';
 import Q65ChildhoodStreet from './Q65ChildhoodStreet.svelte';
 import Q66MaidenName from './Q66MaidenName.svelte';
+import Q67Scene from './Q67Scene.svelte';
+import Q68SceneRecall from './Q68SceneRecall.svelte';
 import Q60DecisionAudit from './Q60DecisionAudit.svelte';
-import Q61ChatExit from './Q61ChatExit.svelte';
+import Q70DarkMode from './Q70DarkMode.svelte';
 
 /** @type {Record<string, any>} */
 const registry = {
 	'party': Q1Party,
-	'big-decision': Q2Decision,
 	'recharge': Q3Recharge,
 	'expired-coupon': Q7Coupon,
 	'one-meal': Q9OneMeal,
@@ -90,9 +88,7 @@ const registry = {
 	'alphabet-subset': Q25Alphabet,
 	'pack-box': Q26MoveBox,
 	'airport-discard': Q27Airport,
-	'planet-alignment': Q28Alignment,
 	'patience-claim': Q29Patience,
-	'rorschach': Q31Noise,
 	'balance-scale': Q32Balance,
 	'rotating-snakes': Q33Snakes,
 	'rank-satisfying': Q34Ranking,
@@ -103,13 +99,15 @@ const registry = {
 	'terms-consent': Q56Terms,
 	'coffee-button': Q57Coffee,
 	'coffee-prompt': Q58CoffeePrompt,
-	'metrics-audit': Q62MetricsAudit,
+	'pointer-heatmap': Q69PointerHeatmap,
 	'birth-date': Q63Birthdate,
 	'favourite-food': Q64FavouriteFood,
 	'childhood-street': Q65ChildhoodStreet,
 	'mothers-maiden-name': Q66MaidenName,
+	'scene-watch': Q67Scene,
+	'scene-recall': Q68SceneRecall,
 	'decision-audit': Q60DecisionAudit,
-	'chat-exit': Q61ChatExit,
+	'light-or-dark': Q70DarkMode,
 	'half-empty': Q44HalfEmpty,
 	'equalizer': Q46Equalizer,
 	'elevator-doors': Q47Signs,
@@ -141,7 +139,6 @@ export const flowOrder = [
 	//   the point: the quiz collects what fortune-telling runs on and then
 	//   reaches its verdict by other means.
 	'party', // party ┐
-	'big-decision', // decision │ pick-one cards
 	'recharge', // recharge ┘
 	'expired-coupon', // coupon
 	'one-meal', // one meal
@@ -150,6 +147,7 @@ export const flowOrder = [
 	'argument-replay', // replaying arguments — keep near the other sliders
 	'comfort-friend', // comfort a friend — MULTI-SELECT intro
 	'perfect-dinner', // build-your-meal — BUDGET-ALLOCATOR intro
+	'alphabet-subset', // dual-range subset selector
 	'rank-satisfying', // rank what's satisfying — DRAG-TO-RANK intro; rank-value weaponises it later
 	// — Chapter 2: perception and taste — and one thing that does not belong —
 	// This chapter is for questions with a VISUAL element: things you look at and
@@ -160,9 +158,25 @@ export const flowOrder = [
 	// END OF THE QUIZ — no interlude wipes it. Keep hide-brush ABOVE the design
 	// block so the taker picks fonts and palettes with paint creeping out from
 	// under the page.
-	'rorschach', // "what do you see?" — Perlin-noise inkblot
+	'memory-claim', // "good memory?" — LIKERT intro, asked perfectly straight.
+	//   FIRST in the chapter and recall-trap is LAST, which is the widest gap the
+	//   two can have now that both live here. The hard branch quotes this
+	//   question's exact wording back at the taker, so every question in between
+	//   is working for it — never let them drift closer together.
+	'terms-consent', // the wall of legalese — a Likert row gated behind 7 screens
+	//   of scroll, with a request for a dollar buried dead centre. Sits
+	//   IMMEDIATELY after memory-claim on purpose: it reuses the exact same Likert
+	//   row the taker just answered, so a four-thousand-word contract arrives
+	//   wearing the costume of the innocent survey item before it — that reuse IS
+	//   the joke. Text-heavy in a visual chapter, but adjacency to memory-claim
+	//   wins over the chapter guideline.
 	'circle-illusion', // "which circle is bigger?" — it lies
 	'hide-brush', // the paintbrush — its paint stains the rest of the run
+	'angry-customer', // berating customer — the delivery arc's live beat. Sits
+	//   IMMEDIATELY after hide-brush on purpose: it is the first screen the
+	//   spreading paint actually carries onto (Q54's header says so — this
+	//   placement is what makes that true). Text-only in the visual chapter,
+	//   but the paint underneath it is doing the visual work.
 	'breakup-text', // a breakup by message, answered from the QuickType bar —
 	//   sits here so the taker walks out of it straight into "pick a typeface"
 	'font-taste', // font ┐
@@ -170,23 +184,17 @@ export const flowOrder = [
 	'button-taste', // button │ immediately before their payoff
 	'wallpaper-taste', // wallpaper ┘
 	'artistic-claim', // "I have an artistic side" — restyled by the four above
+	'recall-trap', // pays off memory-claim at the head of this chapter. MUST stay
+	//   after it — recall-trap reads the claim, and running first would leave it
+	//   null, silently serving the gentle branch forever with nothing to show a
+	//   bug had happened.
 	// — Chapter 3: mechanism gotchas & absurd content —
-	'memory-claim', // "good memory?" — LIKERT intro, asked perfectly straight.
-	//   Deliberately IMMEDIATELY before terms-consent: claim a good memory, then
-	//   get handed 1,000 words with a clause buried in the middle of them.
-	//   recall-trap in chapter 4 tests the claim, but only if it was "Strongly
-	//   agree" — and its hard branch quotes this question's exact wording, so
-	//   keep the two as far apart as the running order allows.
-	'terms-consent', // the wall of legalese — a Likert row gated behind 7 screens
-	//   of scroll, with a request for a dollar buried dead centre. Sits AHEAD of
-	//   patience-claim deliberately: everything below that line is lensed, and
-	//   stacking a 20× slow governor on top of a scroll gate is two endurance
-	//   mechanics fighting for the same joke.
 	'patience-claim', // "how patient are you?" — the lens governs the rest of this chapter
 	'easy-or-hard', // easy life or hard life ┐ instant karma — keep adjacent, in this
 	'math-test', //   the math test, sized to it ┘ order
 	'coffee-button', // "buy me a coffee" — keep IMMEDIATELY before coffee-prompt,
-	'coffee-prompt', //   which hands anyone who pledged a REAL Ko-fi button and
+	'coffee-prompt', //   which hands anyone who pledged a REAL Ko-fi button, or
+	//   asks non-pledgers what could change their mind,
 	//   asks whether they meant it. Placed late in the chapter so there are four
 	//   questions between it and terms-consent, whose clause 5.4 asked the same
 	//   thing in legalese.
@@ -201,31 +209,42 @@ export const flowOrder = [
 	'childhood-street',
 	'mothers-maiden-name',
 	'embezzler-flight', // embezzler
+	'scene-watch', // a street corner, animated, watched on a fixed window. Asks an
+	//   ordinary aesthetic question; the real point is the NEXT one. Must stay
+	//   immediately before scene-recall, and must stay OUT of the patience band
+	//   (patience-claim → the coffee-prompt interlude) — a memory test delivered
+	//   at ×0.05 or speed-read is not the same test.
+	'scene-recall', // bills the scene, branching on the memory type named back in
+	//   recall-trap. Correctness is derived in sceneModel.js from the same grid
+	//   the scene is drawn on, so the art and the answer key cannot drift.
 	'equalizer', // audio EQ — an unusual input, so it sits well past chapter 2
-	'balance-scale', // balance scale
-	'rotating-snakes', // rotating snakes
 	'half-empty', // glass half empty, in units
-	'alphabet-subset', // alphabet subset
 	// …and the payoff run, same chapter (no interlude splits these off):
-	'recall-trap', // pays off memory-claim, back at the head of chapter 3
 	'pack-box', // one box out of the flat — keep right before airport-discard,
 	'airport-discard', //   whose options are exactly what you packed
-	'chat-exit', // the group chat after the argument — reuses breakup-text's
-	//   format from chapter 2, far enough away that the callback registers.
-	//   Bonus-only cross-check against argument-replay, back in chapter 1.
+	'balance-scale', // "what's of equal worth?" — placed just after the packing
+	//   beat: you decide what to keep, throw one away, then weigh worth in the
+	//   abstract. Clusters with rank-value, the other value question. (Cannot sit
+	//   BETWEEN pack-box and airport-discard — that pair must stay adjacent.)
 	'rank-value', // rank lives by value — rank-satisfying's mechanic, weaponised
-	'planet-alignment', // planetary alignment
-	// The two audits, late on purpose: both read a record built across the whole
-	// run, so the further down they sit the more there is to read. metrics-audit
-	// SHOWS the telemetry; decision-audit hides its number and never admits it
-	// checked.
-	'metrics-audit', // the quiz shows you its own telemetry and asks if you accept it
+	// The pointer picture freezes a trail built across the run, then asks whether
+	// the taker recognizes their own inputs. Keep it late so the field is dense.
+	'pointer-heatmap',
 	'decision-audit', // rate your own decisiveness — silently checked against it
+	'light-or-dark', // "light mode or dark mode?" — answer dark and, ON SUBMIT,
+	//   the room goes dark and a table lamp sputters on (LampOverlay), for the
+	//   rest of the run. Enacted, never mentioned, per P6. Post-answer JS
+	//   animation, so the PatienceLens rule is untouched; keep it out of the
+	//   patience band regardless. Difficulty (easy-or-hard 6/7) dims the bulb
+	//   and schedules blackouts; patience ≥6 lengthens them; a Ko-fi pledge
+	//   keeps the lights on. See lampState / LampOverlay.
 	'found-wallet', // the wallet — pays off honesty-claim
 	// — Finale —
 	'elevator-doors', // elevator doors
 	'lantern-price', // $4,800 lantern — a fluffy breather before the close
-	'angry-customer', // berating customer — the delivery arc's live beat
+	'rotating-snakes', // the second illusion, saved for the end: "are the circles
+	//   rotating?" as the penultimate note. detail-claim (chapter 1) still cross-
+	//   checks it, same as circle-illusion.
 	'asteroid-impact' // asteroid planet — the closer
 ];
 

@@ -10,7 +10,8 @@
 	// at any container width, which is the failure mode a fixed-ratio viewBox has.
 	import SplitText from '$lib/SplitText.svelte';
 	import { cascade } from '$lib/reveal.js';
-	import { playSfx } from '$lib/audio/audio.svelte.js';
+	import { audio, playSfx } from '$lib/audio/audio.svelte.js';
+	import { MUSIC_EQ_BANDS, MUSIC_EQ_LIMIT_DB } from '$lib/audio/web-audio-transport.js';
 	import { recordDraft } from '$lib/questions/metrics.svelte.js';
 	import SubmitAnswer from './SubmitAnswer.svelte';
 
@@ -22,20 +23,15 @@
 		return { rule: c.rule(), panel: c.block(), next: c.action() };
 	})();
 
-	const MIN_DB = -12;
-	const MAX_DB = 12;
+	const MIN_DB = -MUSIC_EQ_LIMIT_DB;
+	const MAX_DB = MUSIC_EQ_LIMIT_DB;
 	const STEP = 0.5;
 
 	// Named by what they sound like, not by frequency — the taker is picking a
-	// vibe, not tuning a mixing desk.
-	const BANDS = [
-		{ label: 'Sub' },
-		{ label: 'Bass' },
-		{ label: 'Low mid' },
-		{ label: 'Mid' },
-		{ label: 'Presence' },
-		{ label: 'Treble' }
-	];
+	// vibe, not tuning a mixing desk. The list comes from the audio engine so a
+	// fader is always wired to the filter beside it: six labels and six nodes
+	// drifting out of order is the one failure this question cannot show you.
+	const BANDS = MUSIC_EQ_BANDS;
 	const N = BANDS.length;
 
 	/** @type {number[]} */
@@ -195,6 +191,14 @@
 		if (committed) return;
 		committed = true;
 		recordDraft({ format: 'configuration', value: [...gains], labels: gains.map(fmt) });
+		// The question is taken at its word: the score adopts this curve here and
+		// keeps it for the rest of the quiz. Nothing announces it — you asked for
+		// this configuration, so you get it, including on the asteroid countdown
+		// and the final report. On submit only, so the curve is dialled blind.
+		//
+		// Not gated on audio being enabled: the transport stores the gains with or
+		// without a context, so switching sound on later still honours the answer.
+		audio.music.setEq([...gains]);
 		// Deliberately not gated on having touched anything — a flat EQ is a
 		// position, and it scores as one.
 		setTimeout(() => onAnswer(scoreOf(gains)), 900);

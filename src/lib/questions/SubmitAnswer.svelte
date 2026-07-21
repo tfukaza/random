@@ -41,8 +41,11 @@
 <style>
 	.submit-answer {
 		animation: rise 0.42s both;
-		display: block;
-		padding: 0.75rem 1.5rem;
+		display: grid;
+		place-items: center;
+		width: 13.5rem;
+		height: 2.875rem;
+		padding: 0 0.75rem;
 		background: var(--ink);
 		color: var(--bg);
 		border: none;
@@ -58,7 +61,9 @@
 		background: #0f0f0f;
 	}
 	.submit-answer:disabled {
-		opacity: 0.45;
+		background: var(--rule);
+		color: var(--ink);
+		opacity: 1;
 		cursor: default;
 	}
 </style>

@@ -19,6 +19,16 @@ rigorous as the ones it parodies (that is: not).
 A reveal animation presents *evidence*, not a punchline. If a question knows
 it's funny, it stops being funny.
 
+**The title** is *The Standardized Evaluation of Emotional Disposition* —
+built exactly like a real instrument's name (MMPI, LOT-R, PAI: imposing
+adjective + Evaluation + of X), because no genuine instrument is named as a
+question. Its initials spell **SEED**, which is the botanical punchline of the
+whole quiz surfacing in the letterhead: the result declares you one of 128
+plants, binomial and all. **The site never prints the acronym anywhere** — not
+the tab title, not the seal, not the share text. Per the never-winks rule, the
+taker assembles it themselves, or doesn't. Do not "helpfully" abbreviate it in
+any future copy.
+
 ## The six pillars
 
 Every question should serve at least one. Canonical built examples cited.
@@ -46,10 +56,95 @@ chapter later, you are asked for that question's *exact wording* against four
 near-misses — but only if you claimed it in the strongest terms), honesty-claim
 → found-wallet, detail-claim → the two illusions.
 
+**pack-box tests attention rather than a claim.** The sixteen belongings total
+49 blocks; the box holds 48, and says so. Every item prints its block count
+beside its name, so the arithmetic proving the box cannot take everything is on
+screen from the first second — stated plainly, never pointed at, per P6. The
+question is not "can you pack it" but "how long do you spend on something that
+cannot be done". Spending **more than 32 pick-ups and more than a minute** costs
+detail-orientation (`scope +3`, since scope runs negative = detail-oriented).
+Both conditions are required: a fast flurry is someone playing, and a long sit
+with few moves is someone thinking, and neither is the failure being measured.
+
+Crucially, a *perfect* 48/48 fill is still reachable — but only by leaving a
+one-cell item behind (the mug or the papers; both such subsets tile, verified
+exhaustively). That is the observant taker's reward, and it is why the
+impossibility is of *bringing everything* rather than of filling the box. A
+puzzle where perfect play is also unreachable would just be spiteful.
+
+**memory-claim → recall-trap → the scene pair** is the longest chain in the
+quiz, and worth reading as one instrument. `memory-claim` plants a boast.
+`recall-trap` collects it: claim a good memory *in the strongest terms* and you
+are asked for that question's exact wording; claim it more softly, or not at
+all, and you are asked, sincerely, which single kind of memory you trust most —
+episodic, semantic, working, prospective, spatial. That answer is a **branch
+key**. A chapter later, `scene-watch` openly says *"watch this scene and let it
+soak in"* (an IQ-test pretense, no longer disguised) and shows an animated
+street corner for a fixed window, with a Continue gate that only opens once the
+window has run. `scene-recall` then tests *precisely the faculty you named*:
+
+- **spatial** → *"which of these stood out to you?"* over positions phrased
+  relative to landmarks ("the thing above the bicycle"). Some point at real
+  occupants, some at empty cells — picking a phantom is recalling something that
+  was never there.
+- **working** → *"which object showed your favourite number, 1–10?"* Real picks
+  are the props that bore a digit (door 4, crate 6, stop 9); the traps carried
+  only letters (the sign, the chalkboard).
+- **episodic** → reorder the four timed events (presented scrambled).
+- **semantic** → the shop sign, against one-word-apart near-misses.
+
+- **prospective** → the scene's chalkboard planted "remember the colour of the
+  door", and this collects it, against colour decoys.
+
+These are all **phantom-trap choices**, the same shape as recall-trap's
+phrasings: each wrong option is a plausible confabulation, not a throwaway. The
+strong-claim path, which never named a type, gets the gauntlet its boast earned:
+**recreate the scene** — the fifteen components in a tray, a blank grid, put them
+back.
+
+Nobody chose the faculty to be examined on; they chose the one they were proud
+of, and the quiz took them at their word.
+
+**Difficulty is a second, orthogonal vector.** `easy-or-hard` (the "easy life vs
+hard life" slider, answered ~9 questions earlier) sets the *tier*, independent of
+faculty: **1–2 (easy life) → the easy variant · 3–6 → the normal phantom-trap
+version · 7 (hard life) → recreate the whole scene.** A strong `memory-claim`
+also routes to recreate; recall-trap's new *"I'm bad at all of them"* answer
+(`recall.type = 'none'`) routes to the easy tier. Faculty picks *which* probe,
+difficulty picks *how hard* — `probeFor(type, claimedStrongly, difficulty)` in
+`sceneModel.js`.
+
+Crucially, **easy does not switch off the memory test** — it keeps the phantom
+traps and still scores on correctness, it only lowers the phrasing's load.
+Spatial drops relational computation for plain object names (phantoms are objects
+that weren't there — a fire hydrant); working asks for the bare digit (phantoms
+are numbers never shown); semantic swaps near-misses for obviously-wrong names;
+episodic asks only what came first. Admitting you are bad at memory earns an
+easier test, not a harder one — a small mercy, in a quiz that offers few.
+
+Correctness is **derived** in `sceneModel.js` from the same grid the scene is
+drawn on — the relations, the numbered props, the recreate answer key are all
+read from the layout that draws the art, so the picture and the grading cannot
+drift. That is the one bug class no amount of playtesting would show, so it is
+covered by unit tests instead — including the full difficulty×faculty routing
+table.
+
 **Only endpoints arm a consequence.** A 2 or a 6 on a 1–7 slider is a
 preference; a 1 or a 7 is a claim, and the quiz only ever bills people for
 claims they failed to keep. Widening this puts the punishment in front of people
-who never asserted anything.
+who never asserted anything. *(Under review — the author is considering whether
+refusing to commit, i.e. never answering 1 or 7, should itself cost something.
+That would invert this rule. Not yet decided; see the plan file's "Noted for
+later".)*
+
+**The scene pair is exempt from PatienceLens fast mode.** A patience claim of 1
+speed-reads prose at 1,500 wpm for the rest of the quiz; a memory test
+delivered that way is unfair in a way no other question is. The scene sits
+outside the patience band by placement, but fast mode is not band-bounded, so
+`scene-watch`/`scene-recall` must not be sped past readability. The slow path is
+fine — it is CSS, so the watch window and the events stretch together and stay
+in step. *(Placement keeps them clear of the ×0.05 band; the fast-mode carve-out
+is the open edge, flagged here so it is not forgotten.)*
 
 **How PatienceLens scales time** (`src/lib/PatienceLens.svelte`). Shared
 controls publish authored text and choice labels in their rendered markup, so
@@ -63,9 +158,12 @@ arrives in ~1.25s** — with pointer events off until it finishes, because
 elements fading in from `opacity: 0` are otherwise invisible but clickable.
 Claim 1 speed-reads all authored prose and choices at 1,500 wpm, keeps visual
 cues and controls visible, replaces option labels with the corresponding reader
-numbers, and unlocks interaction only when the reader ends. That mode persists
-through the report, but interludes always render normally as breathing room;
-the escape hatch is offered only in the original patience chapter. The № marker lives *inside* the lens in
+numbers, and unlocks interaction only when the reader ends. That mode runs to
+the END OF THE QUIZ and no further — the report is exempt and always reads at
+normal speed (`fastPersistent` in `+page.svelte` is scoped to the quiz phase,
+and the Result renders with no lens at all). Interludes always render normally
+as breathing room; the escape hatch is offered only in the original patience
+chapter. The № marker lives *inside* the lens in
 `+page.svelte` precisely so it is governed too.
 
 Three things to preserve if you touch it: grip the animations **on mount, not
@@ -89,9 +187,11 @@ drag, pack, tune, rank, permit, wait. New input modes are a feature in
 themselves (see the input-mode backlog in memory).
 
 Built: pack-box (inventory-Tetris moving box), Q28 (drag planets on orbits), Q21
-(iMessage QuickType), Q46 (equalizer faders), Q25 (alphabet range sliders),
+(iMessage QuickType), Q46 (equalizer faders), alphabet-subset (alphabet range sliders),
 Q32 (balance scale), Q15 (budget builder), Q34/Q35 (drag-to-rank), Q23 (the
-browser permission dialog *is* the input).
+browser permission dialog *is* the input), scene-watch (an animated scene you
+just *watch*, on a fixed window — the input is your attention, spent before you
+know it will be tested).
 
 ### P4 — Tropes taken to the extreme
 
@@ -102,7 +202,35 @@ Built: perfect-dinner (one $100 budget, every line tiered to the full $100 so
 blowing it all on a chartered yacht with nothing to eat is a legal answer),
 font/palette/button/wallpaper-taste → artistic-claim (the
 "which font are you" trope, except your taste choices are *applied* to a later
-question so you must live in the room you decorated).
+question so you must live in the room you decorated), equalizer (the headphone-app
+EQ panel, except on submit the background music genuinely adopts your curve and
+keeps it for the rest of the quiz — the asteroid countdown and the final report
+included, applied raw, so a maxed curve really does sound maxed).
+
+The equalizer is enacted, not merely scored, and nothing announces it: per P6 the
+quiz never says "as requested", it simply sounds different from the next question
+onward. See docs/audio.md § Equalizer for why it sits on the music bus (so it
+survives every track change) and why SFX stay uncoloured.
+
+**light-or-dark** (`Q70DarkMode`, late chapter 4) takes the same trope one step
+further: the quiz is paper on a desk and has no dark theme, so answering "dark
+mode" darkens the *room* — on submit the lights ramp down and a vintage lamp
+sputters on, HANGING above the stack's top-right corner (`LampOverlay`, a fixed
+canvas vignette). The beam is a raked, asymmetric cone (focal-offset gradient:
+sharp cut at the shade's rim, long spill down the table) and the fixture sways
+like a slow pendulum — one theta drives the beam's tilt, the pool's position,
+and a pair of CSS variables (`--lamp-on`, `--lamp-sway`) that make the paper's
+re-aimed drop shadows (`.lamp-lit` in `+page.svelte`) sway in counter-phase.
+The shadows have no CSS transition on purpose: the canvas clock is the only
+timing source. It persists until the quiz ends — reaching the report brings the room lights back up over the same gradual dawn (never a cut from dark to bright) — and it is never mentioned.
+Earlier answers tune the wiring: easy-or-hard 6/7 dims the bulb and schedules
+blackouts (~10s / ~3s cadence), patience ≥6 stretches each blackout into a
+2.5–4s outage, patience ≤2 skips the ramp entirely (the room cuts dark and the
+lamp snaps on), and a Ko-fi pledge buys a warmer bulb that never blacks out.
+The overlay is **post-answer JS animation by design** — the PatienceLens rule
+(JS timing before the answer escapes the governor) does not apply, and the
+question holds the screen until the entrance finishes. Reduced motion gets no
+sputter, no wobble, no blackouts. No sound in this pass, deliberately.
 
 ### P5 — Hardballs among the softballs
 
@@ -187,6 +315,17 @@ scenes use the same record with explicit outcome formats. Cross-question checks
 read submitted responses through `latestResponse()` and tolerate a missing
 deep-linked answer. Development builds expose cloned snapshots at
 `window.__quizMetrics`; nothing is persisted or transmitted.
+
+An answer revision is deliberately input-specific. Switching a single-choice
+answer counts after the first pick. A scalar slider counts only when movement
+reverses direction. Dinner allocations never count revisions. Multi-selects
+allow new selections for free until the first deselection, then every later
+toggle counts. Rankings normalize drags and arrow presses to adjacent-position
+distance and allow `n(n−1)/2` free steps—the distance required to reverse the
+whole list—before each further move counts.
+Forward typing does not count as reconsideration; every Backspace in a text
+answer counts once, including private fields whose actual contents are never
+stored.
 
 ### C3 — Measuring behavior, not answers
 
@@ -309,7 +448,7 @@ treating as a named pattern rather than reinventing it each time.)
 
 1. *"Hypothetically, how much would you donate to the creator of this quiz?"*
    — plain PickList, nothing at stake: **$0.10 / $10 / $20**.
-2. *"Practically, how much will you be donating?"* — the same three options,
+2. If they pledged: *"Practically, how much will you be donating?"* — the same three options,
    except each one is a real **Buy Me a Coffee** link that opens the actual
    payment window.
 
@@ -337,7 +476,9 @@ Two options that need none of it, both funnier:
   wrong.
 
 Never actually gate progress on payment. A quiz that won't continue until you
-pay stops being a joke about donation asks and becomes one.
+pay stops being a joke about donation asks and becomes one. If they declined
+the hypothetical donation, the follow-up stays inside the quiz and asks what
+would motivate them to donate instead; it never shows the real Ko-fi controls.
 
 ### C11 — Paying off the location permission
 
@@ -436,10 +577,16 @@ Ids are never reused (see the note on `flowOrder` in
 
 | Question | Why it was cut |
 | --- | --- |
+| `big-decision` — gut / pros-and-cons / ask around / delay | Removed from the opening chapter at product direction; it was a generic pick-one prompt and the surrounding questions already teach that interaction. |
+| `planet-alignment` — arrange the planets | Removed because the interaction was effectively impossible to solve and read as punishment rather than a revealing challenge. |
+| `metrics-audit` — agree with the displayed answer statistics | Removed to make room for a more visual behavioral callback. Its replacement uses the taker's pointer trail rather than presenting a numeric instrument panel. |
+| `chat-exit` — choose what comes to mind after someone leaves a group chat | Retired because its bonus depended on the earlier argument-replay wording, and its reused phone interface was too similar to the breakup-text question to earn another slot. The component is preserved for the retired-question gallery. |
 | `ideal-residence` — submarine / blimp / space station | Cut during the chapter-3/4 pass. **Reason not recorded — fill this in.** Note it was the anchor for the "Thank you for your patience." interlude, which had to be re-pinned to `coffee-prompt`; that interlude bounds the patience lens, so it must always follow the LAST question of chapter 3. |
 | `flooded-building` — fifty floors underwater, how do you get groceries | Cut during the chapter-4 pass. **Reason not recorded — fill this in.** |
 | `dinner-budget` — Friday-night budget ladder | Too generic. It belongs in chapter 1 if anywhere, and chapter 1 is already full. Chapter 2 is reserved for questions with a **visual** element, which this had none of. |
 | `picnic-fridge` — which fridge item to grab | Collateral of moving `memory-claim` to slot 1. Its only job was planting four items for `recall-trap`, and `recall-trap` now tests the exact wording of question 1 instead, so the plant had nothing left to do. |
+| `rorschach` — Perlin-noise inkblot, "what do you see?" | Too basic. It is literally noise: no right answer, no claim to test, and nothing for a later question to hang off — one laugh and then nothing. Replaced by the scene-recall pair, which does the job it could not, in that it gives a later question something to ask about. Its `src/lib/perlin.js` went with it, having no other consumer. |
+| `scene-note` — "how many questions have you answered?" (the non-prospective branch), or a delayed door-colour re-ask (prospective) | Too basic. The default branch was a plain counting question, and the prospective branch just re-asked the door colour that `scene-recall` already collects — so the whole question earned its slot on the strength of a delayed-prospective idea that the immediate probe already covers. Cut; prospective is now tested in place in `scene-recall` like every other faculty. |
 | `ideal-income` | Everyone answers the maximum. A question where the entire population picks one option discriminates nothing, whatever it costs to render. |
 | The 100-storey apartment question | Same failure as `ideal-income` — everyone picks the top floor. |
 | The absurd reprises (three questions parodying earlier ones, e.g. "delay your gut") | Not funny enough to earn their slots, and redundant with the questions they were reprising. |
@@ -463,9 +610,11 @@ Considered and deliberately not pursued — don't re-propose these:
   personality quizzes, so replaying it reads as cliché rather than parody.
 - ~~**Terms & conditions bureaucracy**~~ (was C5). Originally rejected —
   "nobody reads the terms" is a worn-out internet joke. **Revived as
-  `terms-consent`, question 2**, on a narrower premise: the gag is not that
-  the terms are long, it's clause 5.4, which asks for a dollar in the same
-  flat voice as the indemnity clause either side of it. The scroll gate is
+  `terms-consent`, placed immediately after `memory-claim`** so it reuses the
+  same five-point Likert row the taker just answered — a four-thousand-word
+  contract wearing the costume of the innocent survey item before it. The gag is
+  not that the terms are long, it's clause 5.4, which asks for a dollar in the
+  same flat voice as the indemnity clause either side of it. The scroll gate is
   the actual target — being *made* to scroll past something is treated by
   the whole industry as having been informed of it. Keep the document
   unstyled and the clause unemphasised; the moment anything winks, it

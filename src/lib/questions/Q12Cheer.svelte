@@ -4,7 +4,7 @@
 	let { onAnswer } = $props();
 
 	const prompt =
-		"Your friend just lost the cat he'd had since he was a kid, and it broke his heart. How do you comfort him? Pick any number of them.";
+		"Your friend just lost the cat he'd had since he was a kid, and it broke his heart. How do you comfort him? Pick one or more.";
 	const options = [
 		{ label: 'Call him', score: { social: 2, coord: 1 } },
 		{ label: 'Take him out for lunch', score: { social: 2, coord: 1 } },

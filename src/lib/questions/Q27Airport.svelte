@@ -79,7 +79,9 @@
 					disabled={committed}
 					onclick={() => discard(item.id, item.discard)}
 				>
-					<span class="sprite">{@html item.svg}</span>
+					<span class="sprite">
+						<img src={item.sprite} alt="" draggable="false" />
+					</span>
 					<span class="label" data-reader-label>{item.name}</span>
 				</button>
 			{/each}
@@ -153,9 +155,12 @@
 		flex-shrink: 0;
 		color: var(--ink);
 	}
-	.sprite :global(svg) {
+	.sprite img {
 		width: 100%;
 		height: 100%;
+		display: block;
+		object-fit: contain;
+		user-select: none;
 	}
 	.label {
 		font-size: 1.02rem;

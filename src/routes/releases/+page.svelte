@@ -3,10 +3,10 @@
 </script>
 
 <svelte:head>
-	<title>Release notes — What kind of person are you?</title>
+	<title>Release notes — The Standardized Evaluation of Emotional Disposition</title>
 	<meta
 		name="description"
-		content="What has changed in What kind of person are you?, from the first release onward."
+		content="What has changed in The Standardized Evaluation of Emotional Disposition, from the first release onward."
 	/>
 </svelte:head>
 

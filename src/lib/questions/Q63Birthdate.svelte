@@ -7,12 +7,9 @@
 	//
 	// THE SIGN APPEARS AS SOON AS THE DATE IS COMPLETE, stated as a field on the
 	// form rather than announced — no glyph, no flourish, no sentence about what
-	// it means. It is there to plant astrology early and to foreshadow
-	// planet-alignment much later in chapter 4, so that when the quiz starts
-	// arranging planets it reads as something it has been doing all along rather
-	// than a swerve. Nothing after this question refers back to it, and the
-	// results page does not mention it: the quiz reads your star sign and then
-	// reaches its verdict by other means entirely.
+	// it means. Nothing after this question refers back to it, and the results
+	// page does not mention it: the quiz reads your star sign and then reaches its
+	// verdict by other means entirely.
 	//
 	// THREE SELECTS, NOT `<input type="date">`. A native date field renders as a
 	// different control in every browser and drags a platform date-picker over
@@ -102,7 +99,6 @@
 	});
 
 	const complete = $derived(day !== '' && month !== '' && year !== '');
-	const ready = $derived(complete || declined);
 
 	function noteDraft() {
 		declined = false;
@@ -118,13 +114,20 @@
 		month = '';
 		year = '';
 		recordDraft({ format: 'date', value: 'withheld', label: 'Would rather not say' });
+		commit(true);
+	}
+
+	/** @param {boolean} withheld */
+	function commit(withheld) {
+		if (committed) return;
+		committed = true;
+		const delta = withheld ? { risk: -2, social: -1 } : { risk: 1, social: 1 };
+		setTimeout(() => onAnswer(delta), 420);
 	}
 
 	function submit() {
-		if (!ready || committed) return;
-		committed = true;
-		const delta = declined ? { risk: -2, social: -1 } : { risk: 1, social: 1 };
-		setTimeout(() => onAnswer(delta), 420);
+		if (!complete || committed) return;
+		commit(false);
 	}
 
 	const seq = $derived.by(() => {
@@ -169,10 +172,17 @@
 	{/if}
 
 	<div class="actions" style="animation-delay: {seq.out}ms">
-		<button class="ghost" class:chosen={declined} disabled={committed} onclick={decline}>
+		<button
+			class="ghost"
+			class:chosen={declined}
+			data-answer-id="withheld"
+			data-answer-submit
+			disabled={committed}
+			onclick={decline}
+		>
 			I would rather not say
 		</button>
-		<SubmitAnswer disabled={!ready} {committed} delay={seq.out} margin="0 0 0 auto" onsubmit={submit} />
+		<SubmitAnswer disabled={!complete} {committed} delay={seq.out} margin="0 0 0 auto" onsubmit={submit} />
 	</div>
 </div>
 

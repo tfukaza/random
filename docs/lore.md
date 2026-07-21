@@ -51,10 +51,13 @@ inventing the next one: the packing puzzle worked, the wasteland didn't.
 
 Current questions:
 
-- **pack-box** (`Q26MoveBox`) — establishes the premise; pack a 3×4 grid from a pile
+- **pack-box** (`Q26MoveBox`) — establishes the premise; pack a 6×8 grid from a pile
   of your own belongings, more stuff than box. Sentimental items are the expensive
-  ones (the album eats two slots, the guitar three), so keeping what matters costs
-  you what's useful.
+  ones (the album eats two slots, the guitar four), so keeping what matters costs
+  you what's useful. The sixteen items total **49 blocks against 48 slots**, so
+  bringing everything is impossible and the tray prints each item's block count
+  where you can add it up — see `boxItems.js` for what that does and does not
+  rule out.
 - **airport-discard** (`Q27Airport`) — the bag is over the limit by a hair; throw
   away exactly one of the things you just chose to keep. Over by a *hair* is
   deliberate: no item is obviously the heaviest, so the choice is purely about value.
@@ -243,25 +246,66 @@ than what it asks. Two working examples:
   through the wipe. If patience-claim moves, keep that interlude's pin a few questions
   downstream of it, or the lens runs to the end of the quiz.
 
+- **`light-or-dark` → the room itself.** `Q70DarkMode` (late chapter 4) writes a
+  timestamp to `lampState.svelte.js` on a *dark mode* submit; `LampOverlay`
+  (mounted in `+page.svelte`, outside `{#key index}`) then darkens the whole
+  viewport and lights a table lamp over the stack's top-right corner, and
+  `.lamp-lit` re-aims the paper shadows bottom-left. It reads THREE earlier
+  answers at mount, all null-safe: `easy-or-hard` (6/7 → dimmer bulb +
+  scheduled blackouts), `patience.value` (≥6 → blackouts become 2.5–4s
+  outages; ≤2 → the entrance snaps instead of ramping), and the Ko-fi pair
+  (`coffee-button`/`coffee-prompt` → a warmer bulb that never blacks out).
+  When the quiz ends (the report), the lights come back up gradually
+  (`douseLamp` → a ~1.6s dawn) rather than cutting to bright — the report is
+  read in daylight; restart douses too as a fallback.
+
 The general pattern: a `$state` module written by the earlier question, read by the
 later one, always with a sane fallback for the unset case.
 
-## Sequence-coupled questions
+## The memory chain (`memory-claim → recall-trap → scene pair`)
 
-A weaker but stricter coupling: some questions depend on the taker having just *seen*
-the previous one, without reading any state from it.
+The longest `$state` chain in the quiz, spanning three chapters. Four questions
+read from two state modules; the whole thing is documented in `docs/design.md`
+§ P2, and summarised here for the lore/state view.
 
-*(The picnic/recall pair that used to live here was cut. `memory-claim` → `recall-trap`
-replaced it and is a `$state` coupling, documented above — not a sequence one.)*
+- **`memory-claim`** (opens chapter 2, `Q40Memory`) — a plain five-point
+  agree/disagree, "Do you consider yourself to have a good memory?" Writes its
+  Likert index to `recallState.svelte.js` (`recall.claim`). Costs nothing now;
+  it is only a plant.
+- **`recall-trap`** (closes chapter 2, `Q39Recall`) — reads `recall.claim`. A
+  *strong* claim (`STRONGLY_AGREE`) is billed: name that question's exact wording
+  against four near-misses. A softer claim, or none, gets the soft branch — a
+  single-select "which kind of memory are you most confident in?", five faculties
+  plus **"I'm bad at all of them"**. The answer is written to `recall.type` (a
+  faculty id, or `'none'` for bad-at-all). That field is the branch key below.
+- **`scene-watch`** (chapter 4, `Q67Scene`) — an animated street corner watched
+  on a fixed window, then an ordinary aesthetic question. Writes only
+  `sceneState.svelte.js`'s `scene.seen`. The scene carries no answers forward:
+  everything the probes need is fixed in `sceneModel.js`.
+- **`scene-recall`** (immediately after, `Q68SceneRecall`) — reads `recall.type`
+  AND `latestResponse('easy-or-hard')` to pick a probe on two axes (faculty ×
+  difficulty; see `probeFor` and design.md § P2). Normal tier is phantom-trap
+  choices: spatial → relativistic "which stood out", working → "which showed your
+  favourite number", episodic → reorder the four events, semantic → sign vs
+  near-misses. Easy tier keeps the traps but plainer (object names vs distractors,
+  bare digits, "what happened first"). Hard life or a strong claim → **recreate**
+  the whole scene from its pieces (`SceneRecreate.svelte`); "bad at all" → easy.
+  Prospective is collected here too, against the chalkboard's door-colour plant.
 
-- **Q39 → Q40.** `Q40Memory` then asks, on a plain five-point agree/disagree scale,
-  whether you consider yourself to have a good memory. `Q39Recall` writes its verdict
-  to `recallState.svelte.js` (`correct` is true only for a clean sweep — all four real
-  items, nothing invented), and if you got it wrong the prompt gains one word: "Do you
-  *actually* consider yourself to have a good memory?" Correct answers, and deep-links
-  where `correct` is still `null`, get the straight-faced version, so the dig only
-  lands on people who earned it.
+There *was* a fifth link, `scene-note` — a delayed door-colour re-ask six
+questions on, meant to make the prospective test genuinely delayed. It was cut as
+too basic (its non-prospective branch was a plain "how many questions have you
+answered", and the prospective branch duplicated what `scene-recall` already
+asks). Prospective now lands in place with the rest.
 
-  This is the general `$state` pattern rather than a pure sequence coupling, but it
-  still wants to sit immediately after Q39 — the barb only reads while the failure is
-  fresh.
+Two invariants worth guarding. **Order:** every reader must run after its writer,
+so `recall-trap` may never precede `memory-claim`, and the scene pair may never
+precede `recall-trap`. A stale read is not an error — it falls to a harmless
+branch — which means a broken order fails *silently*, the worst kind. **Derived
+truth:** `sceneModel.js` computes every probe's answer from the grid the scene is
+drawn on; its unit tests assert each correct answer is true of the scene and each
+decoy is false. Do not hand-write an answer key beside the art.
+
+Fallbacks, as everywhere: `recall.claim`, `recall.type` and `scene.seen` are all
+null/false on a deep link, and every consumer treats that as "soften, don't
+punish".

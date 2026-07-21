@@ -1,7 +1,7 @@
 <script>
-	// Shared presentational helper for multi-select questions: toggle any number
-	// of chips, or explicitly choose none, then hit submit to commit. Score deltas from
-	// every selected option are summed before being handed to onAnswer.
+	// Shared presentational helper for multi-select questions: toggle one or more
+	// chips, then hit submit to commit. Score deltas from every selected option
+	// are summed before being handed to onAnswer.
 	import SplitText from '$lib/SplitText.svelte';
 	import { cascade, ITEM_MS } from '$lib/reveal.js';
 	import { recordDraft } from '$lib/questions/metrics.svelte.js';
@@ -25,7 +25,6 @@
 	});
 
 	let selected = $state(new Set());
-	let noneSelected = $state(false);
 	let committed = $state(false);
 
 	/** @param {number} i */
@@ -37,7 +36,6 @@
 		} else {
 			next.add(i);
 		}
-		noneSelected = false;
 		selected = next;
 		recordDraft({
 			format: 'multi-choice',
@@ -46,15 +44,8 @@
 		});
 	}
 
-	function chooseNone() {
-		if (committed) return;
-		selected = new Set();
-		noneSelected = true;
-		recordDraft({ format: 'multi-choice', value: [], labels: ['None of these'] });
-	}
-
 	function submit() {
-		if ((!selected.size && !noneSelected) || committed) return;
+		if (!selected.size || committed) return;
 		committed = true;
 		/** @type {Record<string, number>} */
 		const delta = {};
@@ -64,7 +55,7 @@
 			}
 		}
 		onPick?.([...selected]);
-		onAnswer(delta); // empty delta is fine — "none of these" is a valid answer
+		onAnswer(delta);
 	}
 </script>
 
@@ -88,26 +79,13 @@
 				<span class="label" data-reader-label>{opt.label}</span>
 			</button>
 		{/each}
-		<button
-			class="chip"
-			data-sfx="ui-toggle"
-			data-reader-option="None of these"
-			data-answer-id="none"
-			aria-pressed={noneSelected}
-			class:on={noneSelected}
-			disabled={committed}
-			onclick={chooseNone}
-		>
-			<span class="box" data-reader-label>{noneSelected ? '✓' : ''}</span>
-			<span class="label" data-reader-label>None of these</span>
-		</button>
 	</div>
 
 	<SubmitAnswer
-		disabled={!selected.size && !noneSelected}
+		disabled={!selected.size}
 		{committed}
 		delay={seq.submit}
-		label={selected.size ? `Submit (${selected.size} selected) →` : 'Submit — none of these →'}
+		label={selected.size ? `Submit (${selected.size} selected) →` : 'Submit answer →'}
 		onsubmit={submit}
 	/>
 </div>

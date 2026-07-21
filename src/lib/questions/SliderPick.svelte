@@ -43,19 +43,29 @@
 
 	// Only the initial midpoint is needed — each question remounts fresh via #key.
 	// svelte-ignore state_referenced_locally
-	let value = $state(Math.round((min + max) / 2));
+	const initialValue = Math.round((min + max) / 2);
+	let value = $state(initialValue);
+	let lastRecordedValue = $state(initialValue);
 
 	let touched = $state(false);
 	let committed = $state(false);
 	/** @param {Event} e */
 	function onSlide(e) {
 		const next = Number(/** @type {HTMLInputElement} */ (e.currentTarget).value);
+		const previous = lastRecordedValue;
+		lastRecordedValue = next;
 		touched = true;
-		recordDraft({ format: 'scalar', value: next, label: format(next) });
+		recordDraft(
+			{ format: 'scalar', value: next, label: format(next) },
+			{ scalarPreviousValue: previous }
+		);
 	}
 
 	function commit() {
-		if (!touched || committed) return;
+		if (committed) return;
+		// The visible midpoint is a real answer, even when the taker never moves
+		// the thumb. Record it at submission time without manufacturing a change.
+		if (!touched) recordDraft({ format: 'scalar', value, label: format(value) });
 		committed = true;
 		onAnswer(toScore(value));
 	}
@@ -107,7 +117,7 @@
 	/>
 	<p class="readout" style="animation-delay: {seq.readout}ms">{format(value)}</p>
 
-	<SubmitAnswer disabled={!touched} {committed} delay={seq.next} onsubmit={commit} />
+	<SubmitAnswer {committed} delay={seq.next} onsubmit={commit} />
 </div>
 
 <style>
@@ -145,6 +155,8 @@
 		height: 2rem;
 		cursor: pointer;
 		animation: rise 0.42s both;
+		-webkit-user-select: none;
+		user-select: none;
 	}
 	.readout {
 		text-align: center;

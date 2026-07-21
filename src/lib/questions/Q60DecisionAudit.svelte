@@ -1,7 +1,6 @@
 <script>
-	// decision-audit — the mirror of metrics-audit, and the inversion is the
-	// whole design. metrics-audit shows you the numbers and then asks. This one asks
-	// first, checks silently, and never tells you it checked.
+	// decision-audit — asks first, checks the accumulated revision record
+	// silently, and never tells the taker it checked.
 	//
 	// SHOWING THE STATISTIC WOULD RUIN IT. The moment a taker sees "you changed
 	// your mind 11 times", the question stops being about self-knowledge and
