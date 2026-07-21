@@ -1,17 +1,11 @@
 <script>
-	// coffee-prompt — the bill for coffee-button, arriving one question later, and
-	// the only place in the entire quiz that stops being a quiz.
+	// coffee-prompt — the bill for coffee-button, arriving one question later.
+	// A taker who pledged money gets the real Ko-fi ask; someone who declined gets
+	// a normal follow-up about what could motivate them instead.
 	//
-	// IT IS DELIBERATELY THE SAME QUESTION. Same small-text scenario, same
-	// headline, same four rows — the only thing that changed is that the creator
-	// is now this one, and the buttons are real. Nothing announces the parallel;
-	// the taker either notices they are being asked the identical question about
-	// the thing in front of them, or they don't.
-	//
-	// The three donate rows are IDENTICAL, not a ladder. A Ko-fi link cannot
-	// preset an amount, so three differently-labelled buttons would all land on
-	// the same page — and offering the same button three times where a ladder
-	// should be is funnier than any of the amounts would have been.
+	// The pledged branch keeps the same small-text scenario and headline, but the
+	// controls are deliberately simple: one real Ko-fi link, one decline choice,
+	// then one code field whose Submit button owns the final answer.
 	//
 	// THE KO-FI BUTTONS DO NOT ADVANCE. They open the donation page and leave the
 	// question sitting there, because the way forward is the code you get after
@@ -40,7 +34,8 @@
 	// The href uses the account CODE rather than the vanity name — it survives a
 	// username change, and ko-fi.com resolves it to the profile.
 	import SplitText from '$lib/SplitText.svelte';
-	import { cascade, ITEM_MS } from '$lib/reveal.js';
+	import { cascade } from '$lib/reveal.js';
+	import PickList from './PickList.svelte';
 	import SubmitAnswer from './SubmitAnswer.svelte';
 	import {
 		latestResponse,
@@ -52,7 +47,6 @@
 	let { onAnswer, qNumber } = $props();
 
 	const KOFI_URL = 'https://ko-fi.com/Y3X323IG5V';
-	const KOFI_COUNT = 3;
 	const SECRET_CODE = 'Quiz789';
 
 	// The quiz describes itself in the third person, at exactly the pitch a
@@ -65,6 +59,25 @@
 			'.'
 	);
 	const prompt = 'How much are you willing to donate?';
+	const motivationPrompt = 'What would motivate you to donate money?';
+	const motivationOptions = [
+		{
+			label: 'A clear explanation of exactly what the money would fund',
+			score: { scope: -2, creative: -1 }
+		},
+		{
+			label: 'Something useful or exclusive in return',
+			score: { coord: -1, creative: -1, risk: -1 }
+		},
+		{
+			label: 'Knowing the work might not continue without support',
+			score: { coord: 2, social: 1 }
+		},
+		{
+			label: 'A stronger personal connection with the creator',
+			score: { social: 2, coord: 1 }
+		}
+	];
 
 	// Read once — the orchestrator remounts per question.
 	const pledgeIndex = latestResponse('coffee-button')?.value;
@@ -81,7 +94,7 @@
 			premise: c.text(premise),
 			prompt: c.text(prompt),
 			rule: c.rule(),
-			rows: c.items(KOFI_COUNT + 1),
+			rows: c.items(2),
 			submit: c.action()
 		};
 	});
@@ -95,114 +108,109 @@
 	// the one being told.
 	const codeOk = $derived(code.trim().toLowerCase() === SECRET_CODE.toLowerCase());
 
-	/** @type {boolean | null} */
-	let gave = $state(null);
+	/** @type {'decline' | 'code' | null} */
+	let chosen = $state(null);
 
-	// A valid code selects the support answer. Submission remains a separate
-	// action, consistent with every other manual answer in the quiz.
-	function redeem() {
+	function selectDecline() {
 		if (committed) return;
+		chosen = 'decline';
+		code = '';
+		rejected = false;
+		recordDraft({
+			format: 'external-choice',
+			value: 'decline',
+			label: "Don't donate"
+		});
+	}
+
+	function openKofi() {
+		if (!committed) recordEvent('external-link-opened', { target: 'ko-fi' });
+	}
+
+	/** @param {Event & { currentTarget: HTMLInputElement }} event */
+	function editCode(event) {
+		rejected = false;
+		if (/** @type {HTMLInputElement} */ (event.currentTarget).value.trim()) chosen = null;
+	}
+
+	/** @param {boolean} gave */
+	function finish(gave) {
+		committed = true;
+		const delta = gave
+			? { honesty: 3, coord: 2, social: 1 }
+			: { honesty: WALKED_BACK[pledgeIndex ?? 0] ?? -1, coord: -1 };
+		setTimeout(() => onAnswer(delta), 520);
+	}
+
+	// This is both the old "Use code" action and the final Submit action. A
+	// decline needs no code; support must validate the code before committing.
+	function submit() {
+		if (committed) return;
+		if (chosen === 'decline') {
+			finish(false);
+			return;
+		}
 		if (!codeOk) {
 			rejected = true;
 			recordValidationFailure('invalid-donor-code');
 			return;
 		}
-		gave = true;
 		chosen = 'code';
 		recordEvent('donor-code-redeemed', { target: 'ko-fi' });
 		recordDraft({ format: 'external-choice', value: 'support', label: 'Valid donor code' });
-	}
-
-	// `gave` is a boolean because that is all the scoring needs, but three
-	// identical Ko-fi buttons all satisfy `gave === true` — highlighting on that
-	// alone lit up all three at once. `chosen` records which row was actually
-	// pressed and exists purely for the selected state.
-	/** @type {'decline' | 'code' | number | null} */
-	let chosen = $state(null);
-
-	/** @param {boolean} value @param {'decline' | 'code' | number} which */
-	function select(value, which) {
-		if (committed) return;
-		gave = value;
-		chosen = which;
-		recordDraft({
-			format: 'external-choice',
-			value: value ? 'support' : 'decline',
-			label: value ? 'Support me on Ko-fi' : "Don't donate"
-		});
-		if (value) recordEvent('external-link-opened', { target: 'ko-fi' });
-	}
-
-	function commit() {
-		if (gave === null || committed) return;
-		committed = true;
-		const delta = gave
-			? { honesty: 3, coord: 2, social: 1 }
-			: pledged
-				? { honesty: WALKED_BACK[pledgeIndex ?? 0] ?? -1, coord: -1 }
-				: // Said no last question and says no now. The quiz has no quarrel
-					// with someone who never claimed otherwise.
-					{ honesty: 2, coord: -1 };
-		setTimeout(() => onAnswer(delta), 520);
+		finish(true);
 	}
 </script>
 
+
+{#if !pledged}
+	<PickList
+		premise={premise}
+		prompt={motivationPrompt}
+		options={motivationOptions}
+		{onAnswer}
+	/>
+{:else}
 <div class="coffee">
 	<p class="premise"><SplitText text={premise} delay={seq.premise} /></p>
 	<h2><SplitText text={prompt} delay={seq.prompt} /></h2>
 	<hr class="rule" style="animation-delay: {seq.rule}ms" />
 
 	<div class="rows">
+		<a
+			class="kofi"
+			href={KOFI_URL}
+			target="_blank"
+			rel="noopener noreferrer"
+			data-sfx="none"
+			data-reader-option="Support me on Ko-Fi"
+			data-answer-id="support"
+			style="animation-delay: {seq.rows}ms"
+			onclick={openKofi}
+		>
+			<svg class="cup" viewBox="0 0 24 24" aria-hidden="true">
+				<path d="M3 8h13v7a5 5 0 0 1-5 5H8a5 5 0 0 1-5-5V8Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
+				<path d="M16 10h2.5a2.5 2.5 0 0 1 0 5H16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+			</svg>
+			<span data-reader-label>Support me on Ko-Fi</span>
+		</a>
+
 		<button
 			class="decline"
 			class:selected={chosen === 'decline'}
 			data-sfx="none"
 			data-reader-option="Don't donate"
 			data-answer-id="decline"
-			aria-pressed={gave === false}
-			style="animation-delay: {seq.rows}ms"
+			aria-pressed={chosen === 'decline'}
+			style="animation-delay: {seq.rows + 80}ms"
 			disabled={committed}
-			onclick={() => select(false, 'decline')}
+			onclick={selectDecline}
 		>
 			<span data-reader-label>Don't donate</span>
 		</button>
 
-		{#each Array(KOFI_COUNT) as _, i}
-			<a
-				class="kofi"
-				class:selected={chosen === i}
-				href={KOFI_URL}
-				target="_blank"
-				rel="noopener noreferrer"
-				data-sfx="none"
-				data-reader-option="Support me on Ko-fi"
-				data-answer-id="support-{i + 1}"
-				style="animation-delay: {seq.rows + (i + 1) * ITEM_MS}ms"
-				onclick={() => select(true, i)}
-			>
-				<svg class="cup" viewBox="0 0 24 24" aria-hidden="true">
-					<path
-						d="M3 8h13v7a5 5 0 0 1-5 5H8a5 5 0 0 1-5-5V8Z"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linejoin="round"
-					/>
-					<path
-						d="M16 10h2.5a2.5 2.5 0 0 1 0 5H16"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-					/>
-				</svg>
-				<span data-reader-label>Support me on Ko-fi</span>
-			</a>
-		{/each}
-
-		<div class="redeem" style="animation-delay: {seq.rows + (KOFI_COUNT + 1) * ITEM_MS}ms">
-			<label class="redeem-label" for="donor-code">Already donated? Enter your code.</label>
-			<div class="redeem-row">
+		<div class="redeem" style="animation-delay: {seq.rows + 160}ms">
+			<label class="redeem-label" for="donor-code">Enter the code and submit answer.</label>
 				<input
 					id="donor-code"
 					type="text"
@@ -211,19 +219,22 @@
 					spellcheck="false"
 					placeholder="—"
 					bind:value={code}
-					oninput={() => (rejected = false)}
+					oninput={editCode}
 					onkeydown={(e) => {
 						if (e.key === 'Enter') {
 							e.preventDefault();
-							redeem();
+							submit();
 						}
 					}}
 					disabled={committed}
 				/>
-				<button class="redeem-go" onclick={redeem} disabled={committed || !code.trim()}>
-					Use code
-				</button>
-			</div>
+			<SubmitAnswer
+				disabled={chosen !== 'decline' && !code.trim()}
+				{committed}
+				delay={seq.submit}
+				margin="0.75rem 0 0 auto"
+				onsubmit={submit}
+			/>
 			{#if rejected}
 				<p class="redeem-note">That code is not recognised.</p>
 			{:else if chosen === 'code'}
@@ -231,8 +242,8 @@
 			{/if}
 		</div>
 	</div>
-	<SubmitAnswer disabled={gave === null} {committed} delay={seq.submit} onsubmit={commit} />
 </div>
+{/if}
 
 <style>
 	.premise {
@@ -323,14 +334,6 @@
 		outline: 2px solid var(--ink);
 		outline-offset: 3px;
 	}
-	/* The button is already saturated blue, so selection reads as a ring plus a
-	   deeper fill rather than the accent-soft treatment used on plain cards. */
-	.kofi.selected {
-		background: #4d84dd;
-		box-shadow:
-			0 0 0 2px var(--ink),
-			0 2px 8px rgba(114, 164, 242, 0.35);
-	}
 	.redeem {
 		margin-top: 0.4rem;
 		animation: rise 0.42s both;
@@ -343,13 +346,8 @@
 		letter-spacing: 0.16em;
 		color: var(--muted);
 	}
-	.redeem-row {
-		display: flex;
-		gap: 0.6rem;
-	}
-	.redeem-row input {
-		flex: 1;
-		min-width: 0;
+	.redeem input {
+		width: 100%;
 		padding: 0.8rem 1rem;
 		font: inherit;
 		color: var(--ink);
@@ -357,24 +355,9 @@
 		border: 1px solid var(--rule);
 		border-radius: var(--radius);
 	}
-	.redeem-row input:focus-visible {
+	.redeem input:focus-visible {
 		outline: 2px solid var(--ink);
 		outline-offset: 2px;
-	}
-	.redeem-go {
-		padding: 0.8rem 1.3rem;
-		font: inherit;
-		font-weight: 600;
-		background: var(--ink);
-		color: var(--bg);
-		border: none;
-		border-radius: var(--radius);
-		cursor: pointer;
-		white-space: nowrap;
-	}
-	.redeem-go:disabled {
-		opacity: 0.45;
-		cursor: default;
 	}
 	.redeem-note {
 		margin: 0.6rem 0 0;

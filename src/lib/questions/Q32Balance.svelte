@@ -11,8 +11,10 @@
 	import SplitText from '$lib/SplitText.svelte';
 	import { cascade } from '$lib/reveal.js';
 	import { playSfx } from '$lib/audio/audio.svelte.js';
-	import { recordDraft } from '$lib/questions/metrics.svelte.js';
+	import { latestResponse, recordDraft } from '$lib/questions/metrics.svelte.js';
 	import SubmitAnswer from './SubmitAnswer.svelte';
+	import { box } from './boxState.svelte.js';
+	import { ITEMS as BOX_ITEMS } from './boxItems.js';
 
 	let { onAnswer } = $props();
 
@@ -22,7 +24,7 @@
 		return { rule: c.rule(), rig: c.block(), next: c.action() };
 	})();
 
-	const ITEMS = [
+	const STATIC_ITEMS = [
 		{ id: 'car', label: 'A car' },
 		{ id: 'fridge', label: 'A refrigerator' },
 		{ id: 'ozempic', label: 'Ozempic' },
@@ -31,6 +33,36 @@
 		{ id: 'pokemon', label: 'A deck of rare Pokémon cards' },
 		{ id: 'cooper', label: 'Knowledge of the whereabouts of D. B. Cooper' }
 	];
+
+	// THE PERSONAL CHIPS. The absurdity of weighing a car against a fact about
+	// D. B. Cooper is sharpened by dropping the taker's OWN earlier choices into
+	// the same tray — now you are asked whether the thing you packed first is
+	// worth the same as a barrel of oil. Each is read from where its question
+	// already recorded it (no new plumbing beyond pack-box's first-placed), and
+	// each is skipped if its source never happened, so a deep-link degrades to
+	// the plain seven. Read once at mount.
+	/** @param {string} id */
+	const boxName = (id) => BOX_ITEMS.find((it) => it.id === id)?.name;
+
+	function personalItems() {
+		/** @type {{ id: string, label: string }[]} */
+		const out = [];
+		// What stood out in the scene — only the choice-format probes leave a clean
+		// noun; a remembered number or an event order would read as noise here.
+		const scene = latestResponse('scene-recall');
+		if (scene?.format === 'scene-choice' && typeof scene.value === 'string')
+			out.push({ id: 'dyn-scene', label: scene.value });
+		// The first thing packed into the moving box.
+		const packed = box.firstPacked && boxName(box.firstPacked);
+		if (packed) out.push({ id: 'dyn-packed', label: packed });
+		// The thing thrown away at the airport.
+		const tossed = latestResponse('airport-discard');
+		if (tossed && tossed.value !== 'nothing' && typeof tossed.label === 'string')
+			out.push({ id: 'dyn-tossed', label: tossed.label });
+		return out;
+	}
+
+	const ITEMS = [...STATIC_ITEMS, ...personalItems()];
 
 	/** @type {Record<string, 'left' | 'right'>} */
 	let sides = $state({});
@@ -86,7 +118,14 @@
 			const { [id]: _, ...rest } = sides;
 			sides = rest;
 		} else {
-			sides = { ...sides, [id]: zone };
+			// Each pan is a single-value slot. Putting a new item on an occupied
+			// pan returns its previous occupant to the table automatically.
+			const next = { ...sides };
+			for (const [otherId, otherSide] of Object.entries(next)) {
+				if (otherId !== id && otherSide === zone) delete next[otherId];
+			}
+			next[id] = zone;
+			sides = next;
 		}
 		recordDraft({ format: 'configuration', value: sides });
 		// Dip toward whichever pan just took weight, then recover to level. Coming
@@ -104,7 +143,13 @@
 	 * @param {string} id */
 	function cycle(id) {
 		const at = sides[id];
-		place(id, at === undefined ? 'left' : at === 'left' ? 'right' : 'tray');
+		if (at === undefined) {
+			const leftTaken = Object.values(sides).includes('left');
+			const rightTaken = Object.values(sides).includes('right');
+			place(id, !leftTaken ? 'left' : !rightTaken ? 'right' : 'left');
+		} else {
+			place(id, at === 'left' ? 'right' : 'tray');
+		}
 	}
 
 	/** @param {PointerEvent} e @param {string} id */
@@ -149,16 +194,10 @@
 		recordDraft({ format: 'configuration', value: sides });
 		// Placeholder scoring, consistent with every other question — real
 		// categories are deferred project-wide.
-		const placed = onLeft.length + onRight.length;
-		const lopsided = Math.abs(onLeft.length - onRight.length) >= 2;
 		/** @type {Record<string, number>} */
-		// Declaring a 5-vs-1 pile "equal" is a bold act of big-picture math;
-		// carefully balanced counts are bookkeeping. Involving D. B. Cooper at
-		// all is its own whimsical signature.
-		const delta = lopsided ? { risk: 2, scope: 1 } : { scope: -2 };
-		if (placed >= 6) {
-			delta.scope = (delta.scope ?? 0) - 1;
-		}
+		// Choosing an exact pair is a detail-oriented comparison. Involving D. B.
+		// Cooper at all is its own whimsical signature.
+		const delta = { scope: -2 };
 		if (sides['cooper']) {
 			delta.creative = 2;
 			delta.risk = (delta.risk ?? 0) + 1;
@@ -173,17 +212,23 @@
 	</h2>
 	<hr class="rule" style="animation-delay: {seq.rule}ms" />
 	<p class="hint">
-		Load both pans until the two sides are worth the same. Drag, or tap to move an item along.
+		Choose one item for each pan. Drag, or tap to move an item along. A new item replaces the
+		one already there.
 	</p>
 
 	<div class="rig">
-		<!-- Always horizontal. The only motion it ever makes is the settle. -->
-		<div class="beam" class:settling style="--dir: {settleDir}"></div>
-		<div class="hangers">
-			<div class="side" class:settling style="--dir: {settleDir}; --s: -1">
-				<span class="rope"></span>
+		<!-- Separate generated layers let the beam pivot while each hanging pan
+		     rides its endpoint vertically and remains level. The pedestal stays
+		     fixed over the central joint. -->
+		<div class="side side-left" class:settling style="--dir: {settleDir}; --s: -1">
+			<img
+				class="pan-art"
+				src="/images/balance/pan.png"
+				alt=""
+				aria-hidden="true"
+			/>
 				<div
-					class="pan"
+					class="pan pan-left"
 					class:hot={hovering === 'left'}
 					bind:this={leftEl}
 					aria-label="Left pan"
@@ -193,18 +238,16 @@
 					{/each}
 					{#if onLeft.length === 0}<span class="empty">empty</span>{/if}
 				</div>
-			</div>
-
-			<div class="stand" aria-hidden="true">
-				<span class="wedge"></span>
-				<span class="column"></span>
-				<span class="foot"></span>
-			</div>
-
-			<div class="side" class:settling style="--dir: {settleDir}; --s: 1">
-				<span class="rope"></span>
+		</div>
+		<div class="side side-right" class:settling style="--dir: {settleDir}; --s: 1">
+			<img
+				class="pan-art"
+				src="/images/balance/pan.png"
+				alt=""
+				aria-hidden="true"
+			/>
 				<div
-					class="pan"
+					class="pan pan-right"
 					class:hot={hovering === 'right'}
 					bind:this={rightEl}
 					aria-label="Right pan"
@@ -214,8 +257,20 @@
 					{/each}
 					{#if onRight.length === 0}<span class="empty">empty</span>{/if}
 				</div>
-			</div>
 		</div>
+		<img
+			class="beam-art"
+			class:settling
+			style="--dir: {settleDir}"
+			src="/images/balance/beam.png"
+			alt=""
+			aria-hidden="true"
+		/>
+		<img
+			class="pedestal-art"
+			src="/images/balance/pedestal.png"
+			alt="A classical brass balance scale with two hanging pans"
+		/>
 	</div>
 
 	<p class="verdict" class:on={loaded}>Balanced.</p>
@@ -265,18 +320,54 @@
 	}
 
 	.rig {
+		position: relative;
+		aspect-ratio: 3 / 2;
 		animation: rise 0.42s both;
+		-webkit-user-select: none;
+		user-select: none;
 	}
-	.beam {
-		height: 7px;
-		border-radius: 4px;
-		background: var(--ink);
+	.beam-art,
+	.pedestal-art,
+	.pan-art {
+		position: absolute;
+		display: block;
+		pointer-events: none;
+	}
+	.pedestal-art {
+		z-index: 3;
+		left: 50%;
+		bottom: 1%;
+		height: 96%;
+		width: auto;
+		transform: translateX(-50%);
+	}
+	.beam-art {
+		z-index: 2;
+		left: 14%;
+		top: 15%;
+		width: 72%;
+		height: auto;
 		transform-origin: 50% 50%;
+	}
+	.side {
+		position: absolute;
+		z-index: 1;
+		top: 20%;
+		width: 34%;
+		aspect-ratio: 920 / 1116;
+	}
+	.side-left { left: 0; }
+	.side-right { right: 0; }
+	.pan-art {
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		object-fit: contain;
 	}
 	/* The performance: it dips toward the pan that just took weight, rocks a
 	   couple of times, and resolves to dead level — every single time, whatever
 	   you loaded. `--dir` carries which way it dips. */
-	.beam.settling {
+	.beam-art.settling {
 		animation: settle 1.15s cubic-bezier(0.33, 1, 0.68, 1);
 	}
 	@keyframes settle {
@@ -299,95 +390,40 @@
 			transform: rotate(0deg);
 		}
 	}
-
-	.hangers {
-		display: grid;
-		grid-template-columns: 1fr auto 1fr;
-		align-items: start;
-	}
-	.side {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-	}
-	/* The pans ride the beam: same timing curve, opposite ends. `--s` is the
-	   side's own sign (-1 left, +1 right), `--dir` the direction of the dip, so
-	   the product decides whether this pan drops or lifts. */
 	.side.settling {
 		animation: ride 1.15s cubic-bezier(0.33, 1, 0.68, 1);
 	}
 	@keyframes ride {
-		0% {
-			transform: translateY(0);
-		}
-		18% {
-			transform: translateY(calc(var(--dir) * var(--s) * 7px));
-		}
-		45% {
-			transform: translateY(calc(var(--dir) * var(--s) * -3.7px));
-		}
-		70% {
-			transform: translateY(calc(var(--dir) * var(--s) * 1.6px));
-		}
-		88% {
-			transform: translateY(calc(var(--dir) * var(--s) * -0.6px));
-		}
-		100% {
-			transform: translateY(0);
-		}
+		0% { transform: translateY(0); }
+		18% { transform: translateY(calc(var(--dir) * var(--s) * 8px)); }
+		45% { transform: translateY(calc(var(--dir) * var(--s) * -4px)); }
+		70% { transform: translateY(calc(var(--dir) * var(--s) * 1.75px)); }
+		88% { transform: translateY(calc(var(--dir) * var(--s) * -0.65px)); }
+		100% { transform: translateY(0); }
 	}
-	.rope {
-		width: 1px;
-		height: 2.25rem;
-		background: var(--rule);
-	}
+
 	.pan {
-		width: 100%;
-		min-height: 7rem;
+		position: absolute;
+		z-index: 4;
+		left: 1%;
+		top: 77%;
+		width: 98%;
+		height: 22%;
 		display: flex;
-		flex-wrap: wrap;
-		align-content: flex-start;
+		align-items: center;
 		justify-content: center;
-		gap: 0.5rem;
-		padding: 0.75rem;
-		/* Open-topped, like a real pan: sides and a floor, no lid. */
-		border: 1px solid var(--rule);
-		border-top: none;
-		border-radius: 0 0 0.75rem 0.75rem;
-		background: var(--accent-soft);
+		padding: 0.35rem 0.8rem 0.7rem;
+		border: 2px solid transparent;
+		border-radius: 50%;
+		background: transparent;
 		transition:
 			background 0.15s ease,
 			border-color 0.15s ease;
 		touch-action: none;
 	}
 	.pan.hot {
-		border-color: var(--ink);
-		background: var(--surface);
-	}
-
-	.stand {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		padding: 0 1.25rem;
-	}
-	.wedge {
-		width: 0;
-		height: 0;
-		border-left: 0.7rem solid transparent;
-		border-right: 0.7rem solid transparent;
-		border-bottom: 1.1rem solid var(--ink);
-	}
-	.column {
-		width: 3px;
-		height: 4.5rem;
-		background: var(--ink);
-	}
-	.foot {
-		width: 5rem;
-		height: 5px;
-		border-radius: 3px;
-		background: var(--ink);
+		border-color: rgba(34, 34, 32, 0.72);
+		background: rgba(255, 250, 235, 0.38);
 	}
 
 	.verdict {
@@ -411,6 +447,8 @@
 		margin-bottom: 2rem;
 		transition: border-color 0.15s ease;
 		touch-action: none;
+		-webkit-user-select: none;
+		user-select: none;
 	}
 	.tray.hot {
 		border-color: var(--ink);
@@ -440,6 +478,8 @@
 		text-align: left;
 		cursor: grab;
 		touch-action: none;
+		-webkit-user-select: none;
+		user-select: none;
 		transition:
 			transform 0.12s ease,
 			border-color 0.12s ease;
@@ -466,13 +506,14 @@
 		font-size: 0.9rem;
 		transform: translate(-50%, -50%) rotate(-2deg);
 		pointer-events: none;
+		-webkit-user-select: none;
+		user-select: none;
 		filter: drop-shadow(0 0.4rem 0.35rem rgba(0, 0, 0, 0.18));
 	}
 
 	@media (max-width: 560px) {
-		.stand {
-			padding: 0 0.5rem;
-		}
+		.pan { padding-inline: 0.3rem; }
+		.pan .chip { font-size: 0.66rem; padding: 0.32rem 0.38rem; }
 		.chip {
 			font-size: 0.82rem;
 		}

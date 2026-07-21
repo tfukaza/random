@@ -12,9 +12,6 @@
 
 	/** @param {number} value */
 	function toScore(value) {
-		// Logged because chat-exit checks it: claiming you replay arguments and
-		// then reaching for the phone-off button is a mismatch, and matching it
-		// earns a bonus.
 		// Replaying arguments move-by-move is detail orientation in its purest form.
 		return { scope: Math.max(-3, Math.min(3, 4 - value)) };
 	}

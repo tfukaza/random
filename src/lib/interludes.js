@@ -27,13 +27,14 @@ export const interludes = [
 	},
 	// End of chapter 1 — the taker has now met every input type.
 	{ after: 'rank-satisfying', message: "We're just getting started." },
-	// End of chapter 2. Anchored to artistic-claim because that is the LAST
-	// question of the chapter — it used to be scam-text, which then moved up
-	// ahead of the design block. Re-anchoring was mandatory, not cosmetic: left
-	// on the old id, this interlude would have cut the chapter in half and
-	// stranded the four taste questions away from the artistic-claim they
-	// restyle.
-	{ after: 'artistic-claim', message: "Let's move on." },
+	// End of chapter 2. Anchored to recall-trap because that is the LAST question
+	// of the chapter — previously artistic-claim, and scam-text before that.
+	// Re-anchoring is mandatory every time the chapter's tail changes, not
+	// cosmetic: left on a stale id this interlude cuts the chapter in half, which
+	// last time would have stranded the four taste questions away from the
+	// artistic-claim they restyle, and now would additionally split memory-claim
+	// from the recall-trap that bills it.
+	{ after: 'recall-trap', message: "Let's move on." },
 	// Ends chapter 3, and — load-bearing — bounds the patience-claim patience lens: this is
 	// Re-anchored from ideal-residence to coffee-prompt when that question was
 	// cut. Whatever the LAST question of chapter 3 is, this must sit after it:

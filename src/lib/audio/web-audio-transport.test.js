@@ -1,7 +1,7 @@
 // @ts-nocheck
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { WebAudioTransport } from './web-audio-transport.js';
+import { MUSIC_EQ_BANDS, WebAudioTransport } from './web-audio-transport.js';
 
 class FakeAudioParam {
 	constructor(value = 1) {
@@ -36,9 +36,31 @@ class FakeGainNode {
 	constructor() {
 		this.gain = new FakeAudioParam();
 		this.disconnected = false;
+		this.connectedTo = null;
 	}
 
-	connect() {
+	connect(target) {
+		this.connectedTo = target;
+		return this;
+	}
+
+	disconnect() {
+		this.disconnected = true;
+	}
+}
+
+class FakeBiquadFilter {
+	constructor() {
+		this.type = '';
+		this.frequency = new FakeAudioParam(350);
+		this.Q = new FakeAudioParam();
+		this.gain = new FakeAudioParam(0);
+		this.disconnected = false;
+		this.connectedTo = null;
+	}
+
+	connect(target) {
+		this.connectedTo = target;
 		return this;
 	}
 
@@ -114,6 +136,10 @@ class FakeAudioContext {
 
 	createGain() {
 		return new FakeGainNode();
+	}
+
+	createBiquadFilter() {
+		return new FakeBiquadFilter();
 	}
 
 	createDynamicsCompressor() {
@@ -598,4 +624,82 @@ test('dispose aborts a fading voice and clears graph, cache, and listener refere
 		assert.equal(map.size, 0);
 	assert.equal(transport.sfxVoices.size, 0);
 	assert.equal(transport.pendingSfx.size, 0);
+});
+
+test('the equalizer sits between the music bus and the limiter', async () => {
+	await withGlobal('window', { AudioContext: FakeAudioContext }, async () => {
+		const transport = new WebAudioTransport();
+		transport._ensureContext();
+
+		assert.equal(transport.eqNodes.length, MUSIC_EQ_BANDS.length);
+		assert.deepEqual(
+			transport.eqNodes.map((node) => node.type),
+			MUSIC_EQ_BANDS.map((band) => band.type)
+		);
+		assert.deepEqual(
+			transport.eqNodes.map((node) => node.frequency.value),
+			MUSIC_EQ_BANDS.map((band) => band.frequency)
+		);
+
+		// musicBus → eq[0] → … → eq[n] → limiter, with nothing skipping the chain.
+		assert.equal(transport.musicBus.connectedTo, transport.eqNodes[0]);
+		for (let i = 0; i < transport.eqNodes.length - 1; i += 1)
+			assert.equal(transport.eqNodes[i].connectedTo, transport.eqNodes[i + 1]);
+		assert.equal(transport.eqNodes.at(-1).connectedTo, transport.limiter);
+		// SFX stay uncoloured — they join downstream of the EQ and the limiter.
+		assert.equal(transport.sfxBus.connectedTo, transport.masterGain);
+	});
+});
+
+test('setMusicEq clamps the curve and ramps every band', async () => {
+	await withGlobal('window', { AudioContext: FakeAudioContext }, async () => {
+		const transport = new WebAudioTransport();
+		transport._ensureContext();
+
+		transport.setMusicEq([99, -99, 3, 'nonsense', undefined, -6], 400);
+
+		assert.deepEqual(transport.eqGains, [12, -12, 3, 0, 0, -6]);
+		assert.deepEqual(
+			transport.eqNodes.map((node) => node.gain.value),
+			[12, -12, 3, 0, 0, -6]
+		);
+		// Held before ramping, exactly like the music gain — an in-flight ramp
+		// from a previous answer must not fight the new one.
+		assert.deepEqual(transport.eqNodes[0].gain.calls, [
+			['hold', 10],
+			['linear', 12, 10.4]
+		]);
+	});
+});
+
+test('an equalizer answer given before the context exists is applied when it is built', async () => {
+	await withGlobal('window', { AudioContext: FakeAudioContext }, async () => {
+		const transport = new WebAudioTransport();
+		// No gesture yet, so no context — the answer must survive until there is.
+		transport.setMusicEq([6, 0, 0, 0, 0, -3]);
+		assert.equal(transport.context, null);
+		assert.deepEqual(transport.eqGains, [6, 0, 0, 0, 0, -3]);
+
+		transport._ensureContext();
+		assert.deepEqual(
+			transport.eqNodes.map((node) => node.gain.value),
+			[6, 0, 0, 0, 0, -3]
+		);
+	});
+});
+
+test('a context without biquads still routes music, uncoloured', async () => {
+	class NoFilterContext extends FakeAudioContext {}
+	NoFilterContext.prototype.createBiquadFilter = undefined;
+
+	await withGlobal('window', { AudioContext: NoFilterContext }, async () => {
+		const transport = new WebAudioTransport();
+		transport._ensureContext();
+
+		assert.equal(transport.eqNodes, null);
+		assert.equal(transport.musicBus.connectedTo, transport.limiter);
+		// Storing the answer must still not throw — it simply has nowhere to land.
+		transport.setMusicEq([12, 12, 12, 12, 12, 12]);
+		assert.deepEqual(transport.eqGains, [12, 12, 12, 12, 12, 12]);
+	});
 });

@@ -18,6 +18,13 @@
 		options,
 		onAnswer,
 		onPick = () => {},
+		// Fires once, synchronously, when submit is pressed — with the index the
+		// taker actually committed to. Use this (not `onPick`) for side effects
+		// that must survive a change of mind: `onPick` fires on every selection,
+		// including ones the taker then picks their way back out of. Running
+		// before the 520ms advance means a visible effect still lands on the card
+		// they are looking at.
+		onSubmit = () => {},
 		children = undefined
 	} = $props();
 
@@ -68,6 +75,7 @@
 		const choice = picked;
 		if (choice === null || committed) return;
 		committed = true;
+		onSubmit?.(choice);
 		setTimeout(() => onAnswer(options[choice].score), 520);
 	}
 </script>

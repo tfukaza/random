@@ -70,11 +70,17 @@
 		const [item] = next.splice(from, 1);
 		next.splice(to, 0, item);
 		order = next;
-		recordDraft({
-			format: 'ranking',
-			value: order.map((item) => item.id),
-			labels: order.map((item) => item.label)
-		});
+		recordDraft(
+			{
+				format: 'ranking',
+				value: order.map((item) => item.id),
+				labels: order.map((item) => item.label)
+			},
+			{
+				rankingItemCount: order.length,
+				rankingDistance: Math.abs(to - from)
+			}
+		);
 	}
 
 	// SnapSort has already moved the DOM node; this brings `order` back in sync so

@@ -1,20 +1,21 @@
 <script>
-	// memory-claim — the ordinary half of a two-question setup. A five-point
-	// agree/disagree, the most recognizable input in the genre, asked completely
-	// straight, and then immediately followed by terms-consent: 1,000 words with
-	// a request for a dollar buried in the middle of them. Claim a good memory,
-	// then be handed something to remember.
+	// memory-claim — a five-point agree/disagree, the most recognizable input in
+	// the genre, asked completely straight. It opens chapter 2, does DOUBLE duty,
+	// and both jobs lean on the same plain LikertPick row:
 	//
-	// Both questions render the SAME LikertPick row, which is the point — the
-	// second has to arrive as the same ordinary survey item as the first, so the
-	// only thing that has changed is the amount of text above it.
+	//   1. It plants a boast that recall-trap collects at the far end of the
+	//      chapter (`recall.claim`).
+	//   2. It sits IMMEDIATELY before terms-consent, which reuses this exact
+	//      Likert row — so a four-thousand-word contract arrives wearing the
+	//      costume of the innocent survey item the taker just answered. That reuse
+	//      is the joke; keep the two adjacent.
 	//
 	// The flatness is ON PURPOSE. The other Likert in the quiz (artistic-claim)
 	// is a trap, which would make the format itself a tell if the taker never met
 	// an innocent one — so this one has to read as filler.
 	//
 	// It also plants the boast. `recall.claim` carries the answer forward to
-	// recall-trap in chapter 4, which tests it — and only tests it hard if the
+	// recall-trap at the end of this chapter, which tests it — and only hard if the
 	// answer was "Strongly agree". Scoring here is deliberately thin: claiming a
 	// good memory costs nothing at the time, exactly like honesty-claim. The bill
 	// arrives much later, or not at all.

@@ -5,7 +5,11 @@
 	import { questions } from '$lib/questions/index.js';
 	import PatienceLens from '$lib/PatienceLens.svelte';
 	import PaintPool from '$lib/PaintPool.svelte';
+	import CouponSlip from '$lib/CouponSlip.svelte';
+	import LampOverlay from '$lib/LampOverlay.svelte';
 	import { stash, clearStash } from '$lib/questions/stashState.svelte.js';
+	import { coupon, clearCoupon } from '$lib/questions/couponState.svelte.js';
+	import { lamp, douseLamp } from '$lib/questions/lampState.svelte.js';
 	import TemperamentHud from '$lib/TemperamentHud.svelte';
 	import { patience, patienceMode } from '$lib/questions/patienceState.svelte.js';
 	import { interludes, START } from '$lib/interludes.js';
@@ -17,11 +21,16 @@
 	} from '$lib/questions/q50PlanetModel.js';
 	import SplitText from '$lib/SplitText.svelte';
 	import { emptyScores, mergeScores } from '$lib/scoring.js';
+	import { MIN_HONESTY_SCORE } from '$lib/reportOverrides.js';
 	import QuestionRuntime from '$lib/questions/QuestionRuntime.svelte';
 	import { deliveryState, finishAttempt, resetMetrics } from '$lib/questions/metrics.svelte.js';
+	import {
+		resetPointerHeatmap,
+		startPointerHeatmap
+	} from '$lib/questions/pointerHeatmap.js';
 	import AudioController from '$lib/audio/AudioController.svelte';
 	import SoundControl from '$lib/audio/SoundControl.svelte';
-	import { CURRENT_VERSION } from '$lib/releases.js';
+	import { CURRENT_VERSION, releases } from '$lib/releases.js';
 	import {
 		audio,
 		audioState,
@@ -58,6 +67,14 @@
 		return items;
 	})();
 
+	// The cover's volume line, derived from the release history so the journal
+	// issue and the release notes can never disagree: the minor version is the
+	// issue number, the latest release date is the issue date. "Vol. I." is
+	// aspirational — there has only ever been one volume, which is very much in
+	// the spirit of the publications being imitated.
+	const issueNo = Number(CURRENT_VERSION.split('.')[1] ?? 1);
+	const issueDate = releases[0].date.replace(/(\w+) \d+, (\d+)/, '$1, $2');
+
 	// Single-page state machine: intro → quiz (through `flow`) → result.
 	let phase = $state('intro');
 	let index = $state(0);
@@ -70,7 +87,7 @@
 
 	// Formats that take over the whole question area (no № marker — they show
 	// the question number their own way). Add future full-bleed formats here.
-	const FULL_BLEED = new Set(['breakup-text', 'chat-exit']);
+	const FULL_BLEED = new Set(['breakup-text']);
 	const showMarker = $derived(current?.kind === 'question' && !FULL_BLEED.has(current.id));
 	const immersive = $derived(current?.kind === 'question' && current.id === 'elevator-doors');
 
@@ -85,9 +102,13 @@
 	})();
 	const patienceClaimIndex = patienceChapter ? patienceChapter.from - 1 : -1;
 	const claimedPatienceMode = $derived(patienceMode());
+	// Fast mode runs from the patience claim to the END OF THE QUIZ, and no
+	// further: the report is exempt (author's call — the verdict is read at
+	// normal speed, whatever the taker claimed about their patience). Scoping
+	// this to phase === 'quiz' is what exempts it: the report music rate and the
+	// Result's lens mode both derive from this flag.
 	const fastPersistent = $derived(
-		claimedPatienceMode === 'fast' &&
-			(phase === 'result' || (phase === 'quiz' && index > patienceClaimIndex))
+		claimedPatienceMode === 'fast' && phase === 'quiz' && index > patienceClaimIndex
 	);
 	const inPatienceChapter = $derived(
 		!!patienceChapter && index >= patienceChapter.from && index < patienceChapter.to
@@ -117,7 +138,9 @@
 				kind: 'music',
 				track: 'report',
 				cueKey: `${prefix}:report`,
-				rate: fastPersistent ? 'fast' : 'normal'
+				// Always normal: fast mode ends with the quiz (and the report track
+				// is not rate-sensitive anyway).
+				rate: 'normal'
 			};
 		if (current?.kind === 'question' && current.id === 'asteroid-impact') {
 			if (fastPersistent && deliveryState.locked)
@@ -203,20 +226,38 @@
 				: 0
 	);
 
-	// Debug helpers: /?q=7 opens question 7 directly, /?i=1 opens interlude 1
-	// (i wins if both are present), and the current position is kept in the URL
-	// while playing. Questions that depend on earlier answers won't have them
-	// when deep-linked — that's fine, debug only.
+	// Debug helpers: /?report=1 opens a deterministic sample report,
+	// /?report=astroturf opens the exceptional dishonesty report, /?q=7 opens
+	// question 7 directly, and /?i=1 opens interlude 1. The report wins,
+	// then i wins over q. The current quiz position is kept in the URL while
+	// playing. Questions that depend on earlier answers won't have them when
+	// deep-linked — that's fine, debug only.
 	onMount(() => {
+		const stopPointerHeatmap = startPointerHeatmap();
 		hydrateAudioPreference();
 		if (audioState.enabled) void audio.prepareMusic('default');
 		const params = new URLSearchParams(location.search);
+		const reportParam = params.get('report');
+		const report = reportParam === '1' || reportParam === 'astroturf';
 		const i = Number(params.get('i'));
 		const q = Number(params.get('q'));
 		let target = -1;
-		if (Number.isInteger(i) && i >= 1)
+		if (report) {
+			// Non-zero values exercise both sides of the report's spectra without
+			// pretending that a debug visit represents a completed quiz attempt.
+			scores = {
+				social: 6,
+				honesty: reportParam === 'astroturf' ? MIN_HONESTY_SCORE : 4,
+				creative: 8,
+				risk: -5,
+				scope: 3,
+				tempo: -4,
+				coord: 7
+			};
+			phase = 'result';
+		} else if (Number.isInteger(i) && i >= 1)
 			target = flow.findIndex((f) => f.kind === 'interlude' && f.iNumber === i);
-		if (target < 0 && Number.isInteger(q) && q >= 1)
+		if (!report && target < 0 && Number.isInteger(q) && q >= 1)
 			target = flow.findIndex((f) => f.kind === 'question' && f.qNumber === q);
 		if (target >= 0) {
 			index = target;
@@ -224,7 +265,10 @@
 		}
 		// The module-scoped audio service survives client-side navigation. Suspend
 		// the graph here so returning to the quiz can resume it from a new gesture.
-		return () => audio.suspend();
+		return () => {
+			stopPointerHeatmap();
+			audio.suspend();
+		};
 	});
 
 	// Each question lands like a sheet of paper laid on the stack: a slight
@@ -263,10 +307,16 @@
 		runId += 1;
 		scores = emptyScores();
 		resetMetrics();
+		resetPointerHeatmap();
 		index = 0;
 		phase = 'quiz';
 		chapterScored = false;
 		clearStash();
+		clearCoupon();
+		// Not a hard clear: cutting from the dark room straight to a bright page
+		// is a flash in the face. The overlay fades the lights up over ~1.6s and
+		// then retires itself (douseLamp → LampOverlay → clearLamp).
+		douseLamp();
 		syncUrl();
 	}
 
@@ -299,6 +349,13 @@
 			index += 1;
 		} else {
 			phase = 'result';
+			// The quiz is over, so the room lights come back — the report is read
+			// in daylight, not under the lamp. Gradually (the overlay's ~1.6s
+			// dawn), never a cut from dark to bright. No-op if the lamp was
+			// never lit. This is the "finish the quiz" light-up the author asked
+			// for; the douse in start() is only a fallback for restarts from a
+			// mid-dawn state.
+			douseLamp();
 		}
 		if (patienceChapter && (index >= patienceChapter.to || phase === 'result')) scoreChapterExit();
 		syncUrl();
@@ -313,18 +370,28 @@
 		advance();
 	}
 
+	// The live temperament meter, bottom of the screen during the quiz. Hidden
+	// for now — set back to true to bring it back; nothing else needs changing.
+	const SHOW_HUD = false;
+
 	// Whether the live temperament meter is open — the page pads its bottom so
-	// the certificate can always scroll clear of the panel.
+	// the certificate can always scroll clear of the panel. Stays false while
+	// SHOW_HUD is off, so the page reclaims that padding.
 	let hudOpen = $state(false);
 </script>
 
-<main class:hud-open={hudOpen && phase === 'quiz'}>
+<main class:hud-open={hudOpen && phase === 'quiz'} class:lamp-lit={lamp.litAt !== null}>
 	<div class="stage">
 		<!-- First child of the stage, and outside {#key index}: it paints beneath
 		     the sheets and the certificate, and its wall-clock spread survives
 		     every question change instead of restarting. -->
 		{#if phase === 'quiz' && stash.hiddenAt !== null}
 			<PaintPool />
+		{/if}
+		<!-- Also under the stack and outside {#key index}: the coupon you chose not
+		     to use, if you chose not to use it. Peeks from the card's bottom corner. -->
+		{#if phase === 'quiz' && coupon.tuckedAt !== null}
+			<CouponSlip />
 		{/if}
 		<span class="sheet sheet--under" aria-hidden="true"></span>
 		<span class="sheet sheet--deep" aria-hidden="true"></span>
@@ -341,15 +408,45 @@
 
 			{#if phase === 'intro'}
 				<section class="intro" in:scale={{ start: 0.98, duration: 400 }}>
-					<span class="badge">personality quiz</span>
+					<!-- The title follows the real-instrument naming convention (MMPI,
+					     LOT-R, PAI): imposing adjective + Evaluation + of X. Its initials
+					     spell SEED — the botanical punchline of the whole quiz, since the
+					     result declares you one of 128 plants — but per P6 the site NEVER
+					     prints the acronym anywhere. The taker assembles it themselves,
+					     or doesn't. -->
+					<!-- Set like the front cover of a 19th-century scientific journal:
+					     masthead, volume line, scotch rule, title, engraved plate,
+					     epigraph, publisher's imprint. -->
+					<span class="badge">A Psychometric Instrument for the General Reader</span>
 					<hr class="rule rule--scotch" />
-					<h1><SplitText text="What kind of person are you?" delay={300} stagger={32} /></h1>
+					<p class="vol-line">
+						<span>Vol. I.</span>
+						<span class="vol-sep">—</span>
+						<span>{issueDate}</span>
+						<span class="vol-sep">—</span>
+						<span>No. {issueNo}.</span>
+					</p>
+					<hr class="rule vol-rule" />
+					<h1><SplitText text="The Standardized Evaluation of Emotional Disposition" delay={300} stagger={32} /></h1>
 					<div class="fleuron" aria-hidden="true">
 						<hr class="rule" />
-						<span>❦</span>
+						<span><img class="cover-mark" src="/images/cover/botanical-personality-mark.png" alt="" /></span>
 						<hr class="rule" />
 					</div>
-					<p>
+					<!-- A botanical Rorschach: the mirrored specimens form two profiles,
+					     joining the plant verdict to the instrument's assessment language. -->
+					<figure class="plate" aria-hidden="true">
+						<div class="plate-frame">
+							<img
+								src="/images/cover/botanical-rorschach-plate.jpg"
+								alt=""
+								loading="eager"
+								decoding="async"
+							/>
+						</div>
+						<figcaption>Plate I.</figcaption>
+					</figure>
+					<p class="epigraph">
 						A handful of very different questions. No wrong answers — just go with
 						your gut.
 					</p>
@@ -360,7 +457,12 @@
 					<button class="start" onclick={start}
 						><span class="start-label">Begin</span></button
 					>
-					<a class="release-link" href="/releases">Release notes · v{CURRENT_VERSION}</a>
+					<hr class="rule imprint-rule" />
+					<p class="imprint">
+						Meridian &amp; Co., Publishers
+						<span class="imprint-dot">·</span>
+						<a class="release-link" href="/releases">Release notes · v{CURRENT_VERSION}</a>
+					</p>
 				</section>
 			{:else if phase === 'quiz'}
 				<section class="quiz" in:scale={{ start: 0.98, duration: 400 }}>
@@ -420,13 +522,22 @@
 				</section>
 			{:else}
 				<div in:scale={{ start: 0.98, duration: 400 }}>
-					<PatienceLens mode={fastPersistent ? 'fast' : 'normal'} allowEscape={false}>
-						<Result {scores} onRestart={start} />
-					</PatienceLens>
+					<!-- No PatienceLens: fast mode ends with the quiz, and the report is
+					     always read at normal speed. (fastPersistent is also false here
+					     by construction — this bare render just makes it structural.) -->
+					<Result {scores} onRestart={start} />
 				</div>
 			{/if}
 		</div>
 	</div>
+
+	<!-- The room after dark mode: a fixed canvas vignette, outside {#key index}
+	     so it survives every question change and the report. It never mounts
+	     until light-or-dark's dark answer is SUBMITTED, and only a restart
+	     clears it. -->
+	{#if phase !== 'intro' && lamp.litAt !== null}
+		<LampOverlay />
+	{/if}
 </main>
 
 <AudioController active={phase !== 'intro'} />
@@ -434,7 +545,12 @@
 	<SoundControl />
 {/if}
 
-{#if phase === 'quiz'}
+<!-- The live temperament meter is HIDDEN FOR NOW at the author's request. The
+     component and its wiring are intact — flip SHOW_HUD back to true to restore
+     it. Kept as a flag rather than deleted because `hudOpen` still drives the
+     page's bottom padding, and because this is a presentation decision, not a
+     retirement. -->
+{#if phase === 'quiz' && SHOW_HUD}
 	<TemperamentHud {scores} onToggle={(/** @type {boolean} */ o) => (hudOpen = o)} />
 {/if}
 
@@ -620,8 +736,29 @@
 		animation: rise 0.45s both;
 	}
 	.intro .rule--scotch {
-		margin: 0 0 2rem;
+		margin: 0 0 0.9rem;
 		animation: draw 0.6s 0.15s both;
+	}
+	/* The volume line: "Vol. I. — July, 2026. — No. 6." between the scotch rule
+	   and a plain rule, the way every 19th-century journal ran its issue data. */
+	.vol-line {
+		display: flex;
+		justify-content: center;
+		align-items: baseline;
+		gap: 0.75rem;
+		margin: 0 0 0.9rem;
+		font-size: 0.76rem;
+		letter-spacing: 0.14em;
+		text-transform: uppercase;
+		color: var(--ink);
+		animation: rise 0.45s 0.2s both;
+	}
+	.vol-sep {
+		color: var(--muted);
+	}
+	.vol-rule {
+		margin: 0 0 2rem;
+		animation: draw 0.5s 0.3s both;
 	}
 	.intro h1 {
 		font-size: clamp(2.25rem, 6vw, 3.25rem);
@@ -640,16 +777,82 @@
 		animation: draw 0.5s 1.2s both;
 	}
 	.fleuron span {
+		display: inline-flex;
 		color: var(--ink);
-		font-size: 1.1rem;
 		line-height: 1;
 		animation: rise 0.4s 1.1s both;
 	}
-	.intro p {
+	.cover-mark {
+		display: block;
+		width: 1.25rem;
+		height: 1.25rem;
+		object-fit: contain;
+		mix-blend-mode: multiply;
+	}
+	/* The engraving plate: a double frame (border plus offset outline), the
+	   generated botanical assessment engraving, and a specimen caption. */
+	.plate {
+		margin: 0 auto 1.75rem;
+		animation: rise 0.5s 1.25s both;
+	}
+	.plate-frame {
+		width: min(15rem, 72%);
+		aspect-ratio: 4 / 3;
+		margin: 0 auto 0.6rem;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border: 1px solid var(--rule);
+		outline: 1px solid var(--rule);
+		outline-offset: 3px;
+		background: var(--surface);
+		color: var(--muted);
+	}
+	.plate-frame img {
+		display: block;
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		mix-blend-mode: multiply;
+	}
+	.plate figcaption {
+		font-size: 0.62rem;
+		letter-spacing: 0.22em;
+		text-transform: uppercase;
+		color: var(--muted);
+	}
+	.epigraph {
+		font-style: italic;
 		color: var(--muted);
 		max-width: 40ch;
 		margin: 0 auto 2.5rem;
 		animation: rise 0.5s 1.3s both;
+	}
+	/* Publisher's imprint, the journal's colophon line. */
+	.imprint-rule {
+		width: 8rem;
+		margin: 2rem auto 0.9rem;
+		animation: draw 0.5s 1.5s both;
+	}
+	.imprint {
+		display: flex;
+		justify-content: center;
+		align-items: baseline;
+		gap: 0.6rem;
+		margin: 0;
+		font-size: 0.66rem;
+		letter-spacing: 0.16em;
+		text-transform: uppercase;
+		color: var(--muted);
+		animation: rise 0.5s 1.55s both;
+	}
+	/* Inside the imprint the link sits inline in the colophon line, not as the
+	   free-floating block it used to be. */
+	.imprint .release-link {
+		display: inline;
+		margin: 0;
+		font-size: inherit;
+		letter-spacing: inherit;
 	}
 	.start {
 		position: relative;
@@ -752,5 +955,45 @@
 		color: var(--muted);
 		margin-right: 0.3rem;
 		transform: translateY(-0.45em);
+	}
+
+	/* ── the room after dark mode ─────────────────────────────────────────────
+	   When the lamp is lit (LampOverlay mounted, light-or-dark answered dark),
+	   every shadow the paper stack casts is re-aimed toward the BOTTOM-LEFT —
+	   the light comes from a lamp hanging above the top-right corner — and the
+	   lamp SWAYS, so the shadows sway in counter-phase with it.
+
+	   No CSS transition here, deliberately: both the entrance ramp and the sway
+	   arrive via custom properties published from LampOverlay's animation clock
+	   (--lamp-on 0→1 with the darkening, back to 0 at dawn; --lamp-sway the
+	   normalized pendulum). A transition retargeted every frame would low-pass
+	   the sway into mush, so the canvas clock is the ONLY timing source. Every
+	   x-offset is calc()'d from those two vars; at --lamp-on: 0 the x-offsets
+	   are 0, which matches the undisturbed shadows, so the class flip itself is
+	   seamless. */
+	.lamp-lit .frame {
+		box-shadow:
+			calc(var(--lamp-on, 0) * (-0.0625rem - var(--lamp-sway, 0) * 0.09rem)) 0.09375rem 0.0625rem rgba(0, 0, 0, 0.07),
+			calc(var(--lamp-on, 0) * (-0.125rem - var(--lamp-sway, 0) * 0.18rem)) 0.1875rem 0.125rem rgba(0, 0, 0, 0.065),
+			calc(var(--lamp-on, 0) * (-0.25rem - var(--lamp-sway, 0) * 0.35rem)) 0.375rem 0.25rem rgba(0, 0, 0, 0.06),
+			calc(var(--lamp-on, 0) * (-0.5rem - var(--lamp-sway, 0) * 0.7rem)) 0.75rem 0.5rem rgba(0, 0, 0, 0.055),
+			calc(var(--lamp-on, 0) * (-1rem - var(--lamp-sway, 0) * 1.4rem)) 1.5rem 1rem rgba(0, 0, 0, 0.05),
+			calc(var(--lamp-on, 0) * (-1.5rem - var(--lamp-sway, 0) * 2.1rem)) 2.25rem 2rem rgba(0, 0, 0, 0.045),
+			0 0 0.0625rem rgba(0, 0, 0, 0.07);
+	}
+	.lamp-lit .sheet {
+		box-shadow:
+			calc(var(--lamp-on, 0) * (-0.125rem - var(--lamp-sway, 0) * 0.18rem)) 0.1875rem 0.125rem rgba(0, 0, 0, 0.05),
+			calc(var(--lamp-on, 0) * (-0.375rem - var(--lamp-sway, 0) * 0.5rem)) 0.625rem 0.5rem rgba(0, 0, 0, 0.045),
+			calc(var(--lamp-on, 0) * (-0.75rem - var(--lamp-sway, 0) * 1rem)) 1.25rem 1rem rgba(0, 0, 0, 0.04);
+	}
+	.lamp-lit .tab {
+		box-shadow:
+			calc(var(--lamp-on, 0) * (-0.2rem - var(--lamp-sway, 0) * 0.28rem)) 0.3rem 0.375rem rgba(0, 0, 0, 0.18),
+			calc(var(--lamp-on, 0) * (-0.1rem - var(--lamp-sway, 0) * 0.14rem)) 0.15rem 0.125rem rgba(0, 0, 0, 0.12),
+			inset 0.6rem 0 0.5rem -0.45rem rgba(0, 0, 0, 0.22);
+	}
+	.lamp-lit .curl {
+		box-shadow: calc(var(--lamp-on, 0) * (-0.5rem - var(--lamp-sway, 0) * 0.7rem)) 1rem 0.8rem rgba(0, 0, 0, 0.2);
 	}
 </style>

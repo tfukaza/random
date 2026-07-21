@@ -52,6 +52,11 @@ export function beginAttempt(id, qNumber, delivery = 'normal') {
 		hiddenAt: typeof document !== 'undefined' && document.hidden ? startedAt : null,
 		selectionCount: 0,
 		revisionCount: 0,
+		revisionTracking: {
+			scalarDirection: 0,
+			multiArmed: false,
+			rankingDistance: 0
+		},
 		submitAttempts: 0,
 		validationFailures: 0,
 		modalityCounts: {},
@@ -91,28 +96,116 @@ export function recordInteraction(modality = 'unknown') {
 	recordEvent('interaction', { modality });
 }
 
-/** @param {{format: string, value: any, label?: string, labels?: string[], action?: string}} draft */
-export function recordDraft(draft) {
+/**
+ * Decide whether a semantic draft update counts as changing an answer.
+ *
+ * - ordinary/single choice: switching away from the first choice;
+ * - scalar: only reversing movement direction;
+ * - allocation: never (adjustment is the input method itself);
+ * - multi-choice: additions are free until the first deselection, which counts
+ *   and arms every later toggle to count as another revision;
+ * - ranking: moving through up to n(n-1)/2 adjacent positions is free (enough
+ *   to reverse the list); every interaction beyond that budget counts.
+ *
+ * @param {any} previous
+ * @param {any} next
+ * @param {{ scalarPreviousValue?: number, rankingItemCount?: number, rankingDistance?: number }} options
+ */
+function revisionDecision(previous, next, options) {
+	const tracking = current.revisionTracking;
+	if (next.format === 'allocation') return { counted: false, reason: 'allocation-exempt' };
+	if (next.format === 'text' || next.format === 'numeric-entry') {
+		return { counted: false, reason: 'text-revisions-use-backspace' };
+	}
+
+	if (next.format === 'scalar') {
+		const from = Number(options.scalarPreviousValue ?? previous?.value);
+		const to = Number(next.value);
+		if (!Number.isFinite(from) || !Number.isFinite(to) || from === to) {
+			return { counted: false, reason: previous ? 'scalar-no-movement' : 'scalar-default' };
+		}
+		const direction = Math.sign(to - from);
+		const reversed = tracking.scalarDirection !== 0 && direction !== tracking.scalarDirection;
+		tracking.scalarDirection = direction;
+		return {
+			counted: reversed,
+			reason: reversed
+				? 'scalar-direction-reversed'
+				: previous
+					? 'scalar-direction-continued'
+					: 'scalar-direction-established'
+		};
+	}
+
+	if (next.format === 'multi-choice') {
+		if (previous === null) return { counted: false, reason: 'multi-first-selection' };
+		if (tracking.multiArmed) return { counted: true, reason: 'multi-toggle-after-deselection' };
+		const before = Array.isArray(previous.value) ? previous.value.length : 0;
+		const after = Array.isArray(next.value) ? next.value.length : 0;
+		if (after < before) {
+			tracking.multiArmed = true;
+			return { counted: true, reason: 'multi-first-deselection' };
+		}
+		return { counted: false, reason: 'multi-new-selection' };
+	}
+
+	if (next.format === 'ranking') {
+		const count = Math.max(0, Math.floor(Number(options.rankingItemCount) || 0));
+		const distance = Math.max(0, Math.floor(Number(options.rankingDistance) || 0));
+		const budget = (count * (count - 1)) / 2;
+		tracking.rankingDistance += distance;
+		const counted = budget > 0 && tracking.rankingDistance > budget;
+		return {
+			counted,
+			reason: counted ? 'ranking-budget-exceeded' : 'ranking-within-reorder-budget'
+		};
+	}
+
+	return {
+		counted: previous !== null,
+		reason: previous === null ? 'first-selection' : 'answer-switched'
+	};
+}
+
+/**
+ * @param {{format: string, value: any, label?: string, labels?: string[], action?: string}} draft
+ * @param {{ scalarPreviousValue?: number, rankingItemCount?: number, rankingDistance?: number }} [options]
+ */
+export function recordDraft(draft, options = {}) {
 	if (!current || current.terminal) return;
 	const next = safeClone(draft);
 	if (current.draft && same(current.draft, next)) return;
 	const at = now();
 	const previous = current.draft;
+	const revision = revisionDecision(previous, next, options);
 	current.selectionCount += 1;
-	if (previous !== null) current.revisionCount += 1;
+	if (revision.counted) current.revisionCount += 1;
 	if (current.firstSelectionAt === null) current.firstSelectionAt = at;
 	current.draft = next;
 	recordEvent(previous === null ? 'draft-selected' : 'draft-changed', {
 		previous: safeClone(previous),
-		next
+		next,
+		revision
 	});
 }
 
-export function recordSubmitAttempt() {
+/** Count an interaction-defined revision that does not necessarily create a
+ * new semantic draft, such as deleting a character from a private text field.
+ * @param {string} reason
+ * @param {Record<string, any>} [detail]
+ */
+export function recordRevision(reason, detail = {}) {
+	if (!current || current.terminal) return;
+	current.revisionCount += 1;
+	recordEvent('revision-counted', { reason, ...safeClone(detail) });
+}
+
+/** @param {boolean | undefined} valid */
+export function recordSubmitAttempt(valid = undefined) {
 	if (!current || current.terminal) return;
 	current.submitAttempts += 1;
 	if (current.submitAttemptedAt === null) current.submitAttemptedAt = now();
-	recordEvent('submit-attempt', { valid: current.draft !== null });
+	recordEvent('submit-attempt', { valid: valid ?? current.draft !== null });
 }
 
 export function recordValidationFailure(reason = 'invalid') {
@@ -255,6 +348,25 @@ if (import.meta.env.DEV && typeof window !== 'undefined') {
 	// @ts-ignore -- development inspection hook, deliberately absent in production.
 	window.__quizMetrics = Object.freeze({
 		snapshot: snapshotMetrics,
-		summary: () => safeClone(metricsSummary())
+		summary: () => safeClone(metricsSummary()),
+		// Seed a terminal response for an id that a deep-link never played through,
+		// so latestResponse(id) returns it. Only exists to test cross-question
+		// reads (e.g. easy-or-hard → the scene) without replaying the whole quiz.
+		// opts carries format/label for readers that inspect them.
+		seedResponse: (
+			/** @type {string} */ id,
+			/** @type {any} */ value,
+			/** @type {{ format?: string, label?: string }} */ opts = {}
+		) => {
+			quizMetrics.attempts.push({
+				attemptId: `seed:${id}`,
+				id,
+				qNumber: 0,
+				delivery: 'normal',
+				terminal: true,
+				response: { format: opts.format ?? 'scalar', value, label: opts.label ?? value },
+				events: []
+			});
+		}
 	});
 }

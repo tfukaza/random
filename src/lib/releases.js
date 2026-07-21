@@ -5,6 +5,55 @@
  */
 export const releases = [
 	{
+		version: '0.6.0',
+		date: 'July 20, 2026',
+		dateIso: '2026-07-20',
+		label: 'Under new management',
+		summary:
+			'The quiz is now The Standardized Evaluation of Emotional Disposition, and answering it changes the room you take it in.',
+		sections: [
+			{
+				title: 'Changed',
+				items: [
+					'The instrument has been formally retitled The Standardized Evaluation of Emotional Disposition, in line with standard psychometric naming practice.',
+					'The terms and conditions now follow the memory question directly, and several questions have moved between chapters.'
+				]
+			},
+			{
+				title: 'Added',
+				items: [
+					'A memory study: watch a street corner, then be tested on precisely the kind of memory you claimed as your strength — or, for the boldest claims, rebuild the scene from its pieces.',
+					'A device-theme question. Choosing dark mode is honored the only way paper can: the room lights go down and a lamp is provided.',
+					'An expired restaurant coupon, which — if pocketed unused — remains visible under the paper stack for the rest of the session.',
+					'The equalizer question now genuinely equalizes the background music for the remainder of the session.'
+				]
+			}
+		]
+	},
+	{
+		version: '0.5.0',
+		date: 'July 20, 2026',
+		dateIso: '2026-07-20',
+		label: 'Traces on paper',
+		summary: 'The moving box gains handcrafted belongings, and the quiz turns your own pointer trail into a picture.',
+		sections: [
+			{
+				title: 'Added',
+				items: [
+					'The moving-box and airport questions now use sixteen colorful cut-paper belongings shaped to their exact packing pieces.',
+					'A new late-quiz picture reveals the heat map left by mouse movement, clicks, and touch input from the current run.'
+				]
+			},
+			{
+				title: 'Changed',
+				items: [
+					'The impossible planetary-alignment puzzle, its neighboring numeric metrics panel, and the redundant group-chat callback have been retired.',
+					'A hidden retired-question gallery now records cut questions and why they left the quiz.'
+				]
+			}
+		]
+	},
+	{
 		version: '0.4.0',
 		date: 'July 19, 2026',
 		dateIso: '2026-07-19',
@@ -23,7 +72,14 @@ export const releases = [
 				title: 'Fixed',
 				items: [
 					'Dinner-budget changes no longer fail when their answer metrics are captured.',
-					'Timed scenes wait for the fast reader before their clocks and sound cues begin.'
+					'Timed scenes wait for the fast reader before their clocks and sound cues begin.',
+					'Multi-select questions now require a real choice, and Submit buttons stay the same size while clearly changing from inactive gray to active black.',
+					'The birth-date opt-out now skips directly to the next question as intended.',
+					'Slider questions now accept their visible midpoint without requiring the slider to be moved first.',
+					'Answer-change metrics now understand choice switches, slider reversals, multi-select toggles, allocation builders, ranking movement, and text backspaces instead of treating every adjustment the same.',
+					'The donation follow-up now shows the real Ko-fi request only to people who previously chose to donate; everyone else is asked what might motivate them.',
+					'The letter-subset question now appears in the Chapter 1 input tour, and the generic big-decision question has been removed.',
+					'The rotating-circle illusion now moves one non-neighbouring circle at a time in subtler 5° bursts, while hovered or secretly tapped circles stay still.'
 				]
 			}
 		]

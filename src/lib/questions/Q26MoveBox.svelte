@@ -13,11 +13,15 @@
 	import { ITEMS } from './boxItems.js';
 	import { box } from './boxState.svelte.js';
 	import { playSfx } from '$lib/audio/audio.svelte.js';
-	import { recordDraft } from '$lib/questions/metrics.svelte.js';
+	import { currentAttempt, recordDraft, recordEvent } from '$lib/questions/metrics.svelte.js';
 
 	const PROMPT = 'One box is going with you. What do you take?';
 
 	let { onAnswer } = $props();
+
+	// Fresh session: forget any earlier run's first-packed item before this one
+	// records its own. Runs once on mount (the orchestrator remounts per question).
+	box.firstPacked = null;
 
 	// prompt → rule → grid → "grab it and go" (last, per $lib/reveal.js).
 	const seq = (() => {
@@ -26,12 +30,18 @@
 		return { rule: c.rule(), layout: c.block(), leave: c.action() };
 	})();
 
-	// 6 × 8 = 48 cells, which is EXACTLY the total footprint of the sixteen
-	// pieces in boxItems.js. Everything fits. See the note in that file before
-	// touching either number — the pair is a solved exact-cover problem, not a
-	// pair of layout choices.
+	// 6 × 8 = 48 slots against the sixteen pieces' 49 blocks. Everything does NOT
+	// fit, on purpose — see the header of boxItems.js before touching either
+	// number, because the one-block overrun IS the question and a perfect 48/48
+	// fill must stay reachable by leaving a one-cell item behind.
 	const ROWS = 6;
 	const COLS = 8;
+
+	// Thresholds for the detail test in `leave()`. Sixteen items need sixteen
+	// pick-ups to place at all, so the budget is doubled: it takes real thrashing
+	// to pass it, not ordinary tidying up.
+	const MOVE_BUDGET = 32;
+	const IMPOSSIBILITY_GRACE_MS = 60_000;
 
 	/** @type {Record<string, {row: number, col: number}>} */
 	let placements = $state({});
@@ -39,7 +49,15 @@
 	let dragging = $state(null);
 	/** @type {{row: number, col: number, valid: boolean} | null} */
 	let preview = $state(null);
+	// The grid's cell/gap in px, captured when a drag begins. The ghost is drawn
+	// outside .grid and so cannot inherit --cell; without this it collapses to
+	// nothing and the drag becomes invisible.
+	/** @type {{cell: number, gap: number}} */
+	let ghostScale = $state({ cell: 40, gap: 6 });
 	let committed = $state(false);
+	// Every pick-up: out of the tray, back out of the box, or shifted one square.
+	// Read at submit time against the clock — see the note above `leave()`.
+	let moves = $state(0);
 
 	/** @type {HTMLElement} */
 	let gridEl;
@@ -51,6 +69,25 @@
 		h: Math.max(...item.cells.map(([r]) => r)) + 1,
 		w: Math.max(...item.cells.map(([, c]) => c)) + 1
 	});
+
+	// Per-cell edge flags: which sides of this cell face another cell of the SAME
+	// piece. Everything that draws a footprint — the placed piece, the drag ghost,
+	// the tray sprite — uses these to grow each cell over the internal gutter and
+	// drop the border on shared edges, so a polyomino reads as one silhouette with
+	// one outline instead of N separate boxes. The gap between DIFFERENT pieces is
+	// untouched, and it is the only thing telling one belonging from the next.
+	/** @param {{cells: number[][]}} item */
+	function tiles(item) {
+		const has = new Set(item.cells.map(([r, c]) => `${r},${c}`));
+		return item.cells.map(([r, c]) => ({
+			r,
+			c,
+			top: has.has(`${r - 1},${c}`),
+			right: has.has(`${r},${c + 1}`),
+			bottom: has.has(`${r + 1},${c}`),
+			left: has.has(`${r},${c - 1}`)
+		}));
+	}
 
 	const pooled = $derived(ITEMS.filter((it) => !(it.id in placements) && dragging?.id !== it.id));
 	const usedCells = $derived(
@@ -75,13 +112,51 @@
 		});
 	}
 
+	// The grid's real geometry in px, measured off the live element. `--cell` is a
+	// container-query expression that only resolves INSIDE .grid, so anything
+	// drawn outside it — the drag ghost — has to be told the number rather than
+	// inheriting the variable. Reading it here also keeps the hit-test and the
+	// ghost provably in agreement: one measurement, two consumers.
+	function gridMetrics() {
+		if (!gridEl) return null;
+		const rect = gridEl.getBoundingClientRect();
+		const cs = getComputedStyle(gridEl);
+		const px = (/** @type {string} */ value) => parseFloat(value) || 0;
+		const gapX = px(cs.columnGap);
+		const gapY = px(cs.rowGap);
+		const innerW =
+			rect.width - px(cs.borderLeftWidth) - px(cs.borderRightWidth) - px(cs.paddingLeft) - px(cs.paddingRight);
+		const innerH =
+			rect.height - px(cs.borderTopWidth) - px(cs.borderBottomWidth) - px(cs.paddingTop) - px(cs.paddingBottom);
+		const cellW = (innerW - (COLS - 1) * gapX) / COLS;
+		const cellH = (innerH - (ROWS - 1) * gapY) / ROWS;
+		if (!(cellW > 0) || !(cellH > 0)) return null;
+		return {
+			rect,
+			originX: rect.left + px(cs.borderLeftWidth) + px(cs.paddingLeft),
+			originY: rect.top + px(cs.borderTopWidth) + px(cs.paddingTop),
+			gapX,
+			gapY,
+			cellW,
+			cellH
+		};
+	}
+
+	// Maps a pointer position to a grid square. This walks the real stride —
+	// border, then padding, then cell-plus-gap per column — rather than dividing
+	// the element's total width by COLS. That shortcut folds the padding and the
+	// seven gutters into the cell size, which is a tolerable error at a 40px cell
+	// and a real one at the ~30px cell a phone gets: the last column becomes hard
+	// to hit on exactly the devices that can least afford it.
 	/** @param {number} x @param {number} y */
 	function cellFromPoint(x, y) {
-		const rect = gridEl.getBoundingClientRect();
+		const m = gridMetrics();
+		if (!m) return null;
+		const { rect } = m;
 		if (x < rect.left || x >= rect.right || y < rect.top || y >= rect.bottom) return null;
 		return {
-			row: Math.min(ROWS - 1, Math.floor(((y - rect.top) / rect.height) * ROWS)),
-			col: Math.min(COLS - 1, Math.floor(((x - rect.left) / rect.width) * COLS))
+			row: Math.max(0, Math.min(ROWS - 1, Math.floor((y - m.originY) / (m.cellH + m.gapY)))),
+			col: Math.max(0, Math.min(COLS - 1, Math.floor((x - m.originX) / (m.cellW + m.gapX))))
 		};
 	}
 
@@ -96,12 +171,15 @@
 	function startDrag(e, id) {
 		if (committed) return;
 		e.preventDefault();
+		moves += 1;
 		if (id in placements) {
 			// Already in the box — taking it back out (or repositioning it) is a
 			// change of mind. Dragging from the pile is not.
 			const { [id]: _, ...rest } = placements;
 			placements = rest;
 		}
+		const m = gridMetrics();
+		if (m) ghostScale = { cell: m.cellW, gap: m.gapX };
 		dragging = { id, x: e.clientX, y: e.clientY };
 		void playSfx('drag-pickup');
 		updatePreview(e.clientX, e.clientY);
@@ -117,6 +195,8 @@
 	function onUp() {
 		const valid = !!dragging && !!preview?.valid;
 		if (dragging && preview?.valid) {
+			// The first piece to land is remembered for balance-scale (see boxState).
+			if (box.firstPacked === null) box.firstPacked = dragging.id;
 			placements = { ...placements, [dragging.id]: { row: preview.row, col: preview.col } };
 			recordDraft({ format: 'configuration', value: placements, labels: Object.keys(placements).map((id) => byId(id).name) });
 		}
@@ -138,29 +218,6 @@
 		return covers ? (target.valid ? 'ok' : 'bad') : '';
 	}
 
-	// Where to draw a placed piece's icon: the occupied cell nearest the middle
-	// of its footprint.
-	//
-	// The artwork used to be stretched across the whole bounding box and then
-	// masked to the occupied cells. That kept ink from spilling into empty
-	// squares, but on the L, S and plus shapes it sliced the drawing into
-	// unreadable fragments — the sprites are composed for a rectangle, and half
-	// of each one fell in a cell that is not part of the piece. Drawing a single
-	// cell-sized icon instead is always legible and can never overhang a
-	// neighbour; the bordered tiles carry the shape, which is what the puzzle
-	// actually needs them to do.
-	/** @param {{cells: number[][]}} item */
-	function iconSpot(item) {
-		const mid = item.cells.reduce((a, [r, c]) => [a[0] + r / item.cells.length, a[1] + c / item.cells.length], [0, 0]);
-		let best = item.cells[0];
-		let bestD = Infinity;
-		for (const [r, c] of item.cells) {
-			const d = (r - mid[0]) ** 2 + (c - mid[1]) ** 2;
-			if (d < bestD) { bestD = d; best = [r, c]; }
-		}
-		return best;
-	}
-
 	function leave() {
 		if (committed) return;
 		committed = true;
@@ -180,8 +237,9 @@
 		}
 
 		// …but the puzzle scores on top, and harder, because it is the part with
-		// a right answer. Filling the grid completely is not luck: it takes
-		// noticing that everything fits, and then staying with it.
+		// a right answer. The catalogue totals 49 blocks against 48 slots, so
+		// bringing everything is impossible; a full grid means the taker worked
+		// out what to abandon and then packed the rest without a wasted square.
 		const filled = usedCells / (ROWS * COLS);
 		const add = (/** @type {string} */ axis, /** @type {number} */ n) =>
 			(total[axis] = (total[axis] ?? 0) + n);
@@ -200,6 +258,24 @@
 			add('scope', 2);
 			add('tempo', 2);
 		}
+
+		// THE DETAIL TEST. Every item's block count is printed beside its name and
+		// the box states its 48 slots, so the 49-vs-48 overrun is available to
+		// anyone who adds up. Someone who never does keeps hunting for a packing
+		// that cannot exist — a long session with a lot of shuffling is the
+		// signature of exactly that, so it costs detail-orientation (scope runs
+		// negative = detail-oriented, positive = big-picture).
+		//
+		// Both conditions are required, and deliberately so. Many moves in a short
+		// burst is someone playing quickly, not someone missing the point; a long
+		// sit with few moves is someone thinking, which is the opposite of the
+		// failure being measured. Only the two together mean sustained effort
+		// spent on an impossibility.
+		const dwellMs = performance.now() - (currentAttempt()?.startedAt ?? performance.now());
+		const laboured = moves > MOVE_BUDGET && dwellMs > IMPOSSIBILITY_GRACE_MS;
+		if (laboured) add('scope', 3);
+		recordEvent('pack-effort', { moves, dwellMs: Math.round(dwellMs), filled, laboured });
+
 		// Keep any one question from dominating an axis.
 		for (const k of Object.keys(total)) total[k] = Math.max(-3, Math.min(3, total[k]));
 
@@ -218,7 +294,7 @@
 	<div class="layout">
 		<div class="pack">
 			<p class="pack-label">The box — {usedCells} of {ROWS * COLS} slots</p>
-			<div class="grid" bind:this={gridEl}>
+			<div class="grid" bind:this={gridEl} style="--rows: {ROWS}; --cols: {COLS};">
 				{#each Array(ROWS * COLS) as _, i}
 					<!-- svelte-ignore a11y_no_static_element_interactions -->
 					<div
@@ -235,15 +311,26 @@
 						title={item.name}
 						onpointerdown={(e) => startDrag(e, id)}
 					>
-						<!-- One bordered tile per occupied cell: once several pieces sit
-						     side by side, the outline is the only thing separating one
-						     belonging from the next. -->
-						{#each item.cells as [cr, cc]}
-							<span class="tile" style="--tr: {cr}; --tc: {cc};"></span>
+						<!-- One tile per occupied cell, but joined into a single silhouette:
+						     each grows over the gutter toward its same-piece neighbours and
+						     drops the border on that side. Once several pieces sit side by
+						     side, that outline is the only thing separating one belonging
+						     from the next. -->
+						{#each tiles(item) as t}
+							<span
+								class="tile"
+								class:no-t={t.top}
+								class:no-r={t.right}
+								class:no-b={t.bottom}
+								class:no-l={t.left}
+								style="--tr: {t.r}; --tc: {t.c}; --joinx: {t.right ? 1 : 0}; --joiny: {t.bottom
+									? 1
+									: 0};"
+							></span>
 						{/each}
-						<span class="art" style="--ar: {iconSpot(item)[0]}; --ac: {iconSpot(item)[1]};"
-							>{@html item.svg}</span
-						>
+						<span class="art">
+							<img src={item.sprite} alt="" draggable="false" />
+						</span>
 					</div>
 				{/each}
 			</div>
@@ -261,12 +348,29 @@
 							title={item.name}
 							onpointerdown={(e) => startDrag(e, item.id)}
 						>
-							{#each item.cells as [r, c]}
-								<span class="mini-cell" style="--mr: {r}; --mc: {c};"></span>
+							{#each tiles(item) as t}
+								<span
+									class="mini-cell"
+									class:no-t={t.top}
+									class:no-r={t.right}
+									class:no-b={t.bottom}
+									class:no-l={t.left}
+									style="--mr: {t.r}; --mc: {t.c}; --joinx: {t.right ? 1 : 0}; --joiny: {t.bottom
+										? 1
+										: 0};"
+								></span>
 							{/each}
-							<span class="sprite-art">{@html item.svg}</span>
+							<span class="sprite-art">
+								<img src={item.sprite} alt="" draggable="false" />
+							</span>
 						</div>
-						<span class="caption" data-reader-label>{item.name}</span>
+						<!-- The block count is the tell. Sixteen items come to 49 against 48
+						     slots, so the arithmetic needed to realise the box cannot hold
+						     everything is on screen from the first second — stated plainly,
+						     never pointed at. -->
+						<span class="caption" data-reader-label
+							>{item.name} ({item.cells.length})</span
+						>
 					</div>
 				{/each}
 				{#if pooled.length === 0}
@@ -279,11 +383,26 @@
 	{#if dragging}
 		{@const item = byId(dragging.id)}
 		{@const b = bbox(item)}
-		<div class="ghost" style="--h: {b.h}; --w: {b.w}; left: {dragging.x}px; top: {dragging.y}px;">
-			{#each item.cells as [r, c]}
-				<span class="ghost-cell" style="--mr: {r}; --mc: {c};"></span>
+		<!-- --cell/--gap are set in px here, not inherited: this element sits
+		     outside .grid, where the container-query expression for --cell does
+		     not resolve. -->
+		<div
+			class="ghost"
+			style="--cell: {ghostScale.cell}px; --gap: {ghostScale.gap}px; --h: {b.h}; --w: {b.w}; left: {dragging.x}px; top: {dragging.y}px;"
+		>
+			{#each tiles(item) as t}
+				<span
+					class="ghost-cell"
+					class:no-t={t.top}
+					class:no-r={t.right}
+					class:no-b={t.bottom}
+					class:no-l={t.left}
+					style="--mr: {t.r}; --mc: {t.c}; --joinx: {t.right ? 1 : 0}; --joiny: {t.bottom ? 1 : 0};"
+				></span>
 			{/each}
-			<span class="sprite-art">{@html item.svg}</span>
+			<span class="sprite-art">
+				<img src={item.sprite} alt="" draggable="false" />
+			</span>
 		</div>
 	{/if}
 
@@ -294,8 +413,13 @@
 
 <style>
 	.movebox {
+		--gap: clamp(4px, 1.2cqw, 6px);
+		/* Fallback only. The real --cell is a container-query expression on .grid
+		   and does not resolve outside it, so anything drawn elsewhere degrades to
+		   the desktop size rather than collapsing to a zero-sized calc(). The drag
+		   ghost overrides this with measured px; this is the guard for the next
+		   thing that forgets. */
 		--cell: 2.5rem;
-		--gap: 6px;
 	}
 	.premise {
 		color: var(--muted);
@@ -331,11 +455,25 @@
 		color: var(--muted);
 		margin: 0 0 0.6rem;
 	}
+	/* The grid sizes itself against THIS box, which is the card's real interior
+	   width. `vw` cannot do that job: the frame's padding is itself a clamp() and
+	   changes with the viewport, so a vw-derived cell either overflows on small
+	   phones or wastes space on large ones. */
+	.pack {
+		container-type: inline-size;
+		-webkit-user-select: none;
+		user-select: none;
+	}
 	.grid {
 		position: relative;
 		display: grid;
-		grid-template-columns: repeat(8, var(--cell));
-		grid-template-rows: repeat(6, var(--cell));
+		/* Eight columns must always fit the card, and must never grow past the
+		   desktop size. One min() covers both, continuously, with no breakpoint —
+		   the +1 gap accounts for the padding on each side, the 2px for the
+		   border. */
+		--cell: min(2.5rem, calc((100cqw - (var(--cols) + 1) * var(--gap) - 2px) / var(--cols)));
+		grid-template-columns: repeat(var(--cols), var(--cell));
+		grid-template-rows: repeat(var(--rows), var(--cell));
 		gap: var(--gap);
 		padding: var(--gap);
 		border: 1px solid var(--rule);
@@ -343,9 +481,8 @@
 		touch-action: none;
 		/* The columns are a fixed size, so without this the box stretches to the
 		   full card width and draws a border around empty space to the right of
-		   the last column — and worse, the drop-target maths in `cellAt()` divides
-		   the element's width by COLS, so a stretched box would map pointer
-		   positions to the wrong column. */
+		   the last column — and worse, the drop-target maths in `cellFromPoint()`
+		   would then map pointer positions to the wrong column. */
 		width: max-content;
 		margin: 0 auto;
 	}
@@ -363,30 +500,56 @@
 		border-style: solid;
 		border-color: #a08880;
 	}
+	/* `--joinx`/`--joiny` extend a cell over the gutter toward a same-piece
+	   neighbour. Because `box-sizing: border-box` is global, the extended edge
+	   lands exactly where the neighbour's own edge starts, so the fills meet with
+	   no seam and the surviving borders form one continuous outline. No
+	   border-radius: rounded corners would notch every join. */
 	.tile {
 		position: absolute;
 		left: calc(var(--tc) * (var(--cell) + var(--gap)));
 		top: calc(var(--tr) * (var(--cell) + var(--gap)));
-		width: var(--cell);
-		height: var(--cell);
+		width: calc(var(--cell) + var(--joinx) * var(--gap));
+		height: calc(var(--cell) + var(--joiny) * var(--gap));
 		background: var(--surface);
 		border: 1px solid var(--ink);
-		border-radius: 2px;
+	}
+	/* Shared edges are interior to the shape, so they carry no outline. */
+	.tile.no-t,
+	.mini-cell.no-t,
+	.ghost-cell.no-t {
+		border-top-width: 0;
+	}
+	.tile.no-r,
+	.mini-cell.no-r,
+	.ghost-cell.no-r {
+		border-right-width: 0;
+	}
+	.tile.no-b,
+	.mini-cell.no-b,
+	.ghost-cell.no-b {
+		border-bottom-width: 0;
+	}
+	.tile.no-l,
+	.mini-cell.no-l,
+	.ghost-cell.no-l {
+		border-left-width: 0;
 	}
 	.art {
 		position: absolute;
-		left: calc(var(--ac) * (var(--cell) + var(--gap)));
-		top: calc(var(--ar) * (var(--cell) + var(--gap)));
-		width: var(--cell);
-		height: var(--cell);
-		padding: 0.18rem;
+		inset: 0;
+		padding: 1px;
 		display: block;
 		pointer-events: none;
+		z-index: 1;
 	}
-	.art :global(svg) {
+	.art img {
 		width: 100%;
 		height: 100%;
 		display: block;
+		object-fit: fill;
+		-webkit-user-select: none;
+		user-select: none;
 	}
 	.placed {
 		position: absolute;
@@ -398,13 +561,11 @@
 		cursor: grab;
 		touch-action: none;
 	}
-	.placed :global(svg) {
-		width: 100%;
-		height: 100%;
-	}
 	.supply {
 		flex: 1;
 		min-width: 0;
+		-webkit-user-select: none;
+		user-select: none;
 	}
 	.pool {
 		display: flex;
@@ -433,19 +594,24 @@
 		position: absolute;
 		left: calc(var(--mc) * (var(--pcell) + var(--pgap)));
 		top: calc(var(--mr) * (var(--pcell) + var(--pgap)));
-		width: var(--pcell);
-		height: var(--pcell);
+		width: calc(var(--pcell) + var(--joinx) * var(--pgap));
+		height: calc(var(--pcell) + var(--joiny) * var(--pgap));
 		border: 1px dashed var(--rule);
 		background: var(--accent-soft);
 	}
 	.sprite-art {
 		position: absolute;
 		inset: 0;
-		padding: 0.15rem;
+		padding: 1px;
+		pointer-events: none;
 	}
-	.sprite-art :global(svg) {
+	.sprite-art img {
 		width: 100%;
 		height: 100%;
+		display: block;
+		object-fit: fill;
+		-webkit-user-select: none;
+		user-select: none;
 	}
 	.caption {
 		font-size: 0.62rem;
@@ -472,8 +638,8 @@
 		position: absolute;
 		left: calc(var(--mc) * (var(--cell) + var(--gap)));
 		top: calc(var(--mr) * (var(--cell) + var(--gap)));
-		width: var(--cell);
-		height: var(--cell);
+		width: calc(var(--cell) + var(--joinx) * var(--gap));
+		height: calc(var(--cell) + var(--joiny) * var(--gap));
 		border: 1px dashed var(--rule);
 		background: rgba(252, 252, 251, 0.85);
 	}
@@ -497,14 +663,5 @@
 	}
 	.leave-label {
 		position: relative;
-	}
-	@media (max-width: 640px) {
-		.movebox {
-			--cell: 3rem;
-		}
-		.layout {
-			flex-direction: column;
-			gap: 1.5rem;
-		}
 	}
 </style>

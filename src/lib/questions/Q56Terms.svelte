@@ -1,7 +1,14 @@
 <script>
-	// terms-consent — QUESTION TWO, and the second half of chapter one's straight
-	// opening. The format is still an ordinary five-point agree/disagree; only the
+	// terms-consent — the second question of chapter 2, IMMEDIATELY after
+	// memory-claim. The format is an ordinary five-point agree/disagree; only the
 	// thing being agreed to has grown to four thousand words.
+	//
+	// The adjacency is the joke: memory-claim just asked "do you have a good
+	// memory?" on this exact Likert row, so the contract arrives in the same
+	// costume — the taker reaches for the same familiar control and only then
+	// notices what it is attached to. Nothing here *depends* on memory-claim (the
+	// buried clause does its own work), but keep them adjacent — the reused format
+	// is what sells it.
 	//
 	// THE CLAUSE IS THE QUESTION. Section 5.4 asks, in the flattest possible
 	// voice and with no formatting of any kind to distinguish it, whether the

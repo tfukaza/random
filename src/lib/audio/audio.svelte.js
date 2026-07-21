@@ -154,6 +154,17 @@ export const audio = {
 			return runtime().coordinator.setRate(rate, options);
 		},
 
+		/**
+		 * Hands the equalizer question's answer to the music bus. Like duck(),
+		 * this goes straight to the transport: it changes how the music sounds,
+		 * never what is playing, so it has no business in the coordinator's
+		 * intent revisions. Applies to every track from here on.
+		 * @param {number[]} gainsDb @param {{ rampMs?: number }} [options]
+		 */
+		setEq(gainsDb, options = {}) {
+			runtime().transport.setMusicEq(gainsDb, options.rampMs);
+		},
+
 		/** @param {string} label @param {number} amount */
 		duck(label, amount) {
 			const owner = Symbol(label);

@@ -1135,6 +1135,8 @@
 		width: 100%;
 		height: 100%;
 		touch-action: none;
+		-webkit-user-select: none;
+		user-select: none;
 		cursor: grab;
 		outline-offset: -3px;
 	}
