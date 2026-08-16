@@ -68,14 +68,14 @@ test('every registered audio asset is served', async ({ request }) => {
 });
 
 test('the elevator runner pictogram loads before the doors move', async ({ page }) => {
-	await page.goto('/');
+	await page.goto('/quiz');
 	const elevatorQuestion = await page.evaluate(async () => {
 		const { questions } = await import('/src/lib/questions/index.js');
 		return questions.findIndex((question) => question.id === 'elevator-doors') + 1;
 	});
 	expect(elevatorQuestion).toBeGreaterThan(0);
 
-	await page.goto(`/?q=${elevatorQuestion}`);
+	await page.goto(`/quiz?q=${elevatorQuestion}`);
 	const runner = page.locator('img.runner');
 	await expect(runner).toBeVisible();
 	await expect
@@ -84,7 +84,7 @@ test('the elevator runner pictogram loads before the doors move', async ({ page 
 });
 
 test('Begin installs the default cue and sound can be toggled', async ({ page }) => {
-	await page.goto('/');
+	await page.goto('/quiz');
 	await page.evaluate(() => localStorage.removeItem('personality-quiz-sound'));
 	await page.reload();
 	await waitForHydration(page);
@@ -116,7 +116,7 @@ test('Begin installs the default cue and sound can be toggled', async ({ page })
 });
 
 test('deep-linked asteroid and final breath install explicit intents', async ({ page }) => {
-	await page.goto('/');
+	await page.goto('/quiz');
 	await waitForHydration(page);
 	const asteroidQuestion = await page.evaluate(async () => {
 		const { questions } = await import('/src/lib/questions/index.js');
@@ -124,7 +124,7 @@ test('deep-linked asteroid and final breath install explicit intents', async ({ 
 	});
 	expect(asteroidQuestion).toBeGreaterThan(0);
 
-	await page.goto(`/?q=${asteroidQuestion}`);
+	await page.goto(`/quiz?q=${asteroidQuestion}`);
 	await waitForHydration(page);
 	await expect.poll(async () => (await audioState(page)).requestedTrack).toBe('asteroid');
 	await page.mouse.click(8, 8);
@@ -136,14 +136,14 @@ test('deep-linked asteroid and final breath install explicit intents', async ({ 
 		const { interludes } = await import('/src/lib/interludes.js');
 		return interludes.length;
 	});
-	await page.goto(`/?i=${finalInterlude}`);
+	await page.goto(`/quiz?i=${finalInterlude}`);
 	await waitForHydration(page);
 	await expect.poll(async () => (await audioState(page)).requestedTrack).toBe('');
 	await expect.poll(async () => (await audioState(page)).status).toBe('silent');
 });
 
 test('the public music API switches and stops within one document', async ({ page }) => {
-	await page.goto('/');
+	await page.goto('/quiz');
 	await waitForHydration(page);
 	await page.getByRole('button', { name: 'Begin' }).click();
 	await expect.poll(async () => (await audioState(page)).activeTrack).toBe('default');
@@ -163,7 +163,7 @@ test('the public music API switches and stops within one document', async ({ pag
 });
 
 test('recoverable audio is exposed as an explicit restore action', async ({ page }) => {
-	await page.goto('/');
+	await page.goto('/quiz');
 	await waitForHydration(page);
 	await page.getByRole('button', { name: 'Begin' }).click();
 	await expect.poll(async () => (await audioState(page)).started).toBe(true);

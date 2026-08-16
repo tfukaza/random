@@ -21,7 +21,7 @@
 			<span class="corner corner--br" aria-hidden="true"></span>
 
 			<nav aria-label="Breadcrumb">
-				<a href="/">← Return to the quiz</a>
+				<a href="/quiz">← Return to the quiz</a>
 			</nav>
 
 			<header>

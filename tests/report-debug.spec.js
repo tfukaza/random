@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 test('report debug parameter opens a populated report directly', async ({ page }) => {
-	await page.goto('/?report=1');
+	await page.goto('/quiz?report=1');
 
 	await expect(page).toHaveURL(/\?report=1$/);
 	await expect(page.getByText('Temperament profile')).toBeVisible();
@@ -11,7 +11,7 @@ test('report debug parameter opens a populated report directly', async ({ page }
 });
 
 test('AstroTurf debug report renders the exceptional override', async ({ page }) => {
-	await page.goto('/?report=astroturf');
+	await page.goto('/quiz?report=astroturf');
 
 	await expect(page).toHaveURL(/\?report=astroturf$/);
 	await expect(page.getByText('Type ASTROTURF')).toBeVisible();

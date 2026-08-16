@@ -1,13 +1,13 @@
 {
 	"name": "personality-quiz",
 	"private": true,
-	"version": "0.5.0",
+	"version": "0.8.0",
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev --host",
 		"build": "vite build",
 		"preview": "vite preview",
-		"test": "node --test src/lib/questions/*.test.js src/lib/audio/*.test.js",
+		"test": "node --test src/lib/questions/*.test.js src/lib/audio/*.test.js src/lib/tetris/*.test.js",
 		"test:audio": "node --test src/lib/audio/*.test.js",
 		"test:e2e:audio": "playwright test tests/audio.spec.js",
 		"test:e2e": "playwright test",

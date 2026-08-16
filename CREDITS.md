@@ -138,3 +138,47 @@ is shown beneath the photograph wherever it appears in the app.
 | _Coffea arabica_ | Marcelo Corrêa | [CC BY-SA 3.0](http://creativecommons.org/licenses/by-sa/3.0/) | [Commons file page](https://commons.wikimedia.org/wiki/File:Coffee_Flowers.JPG) |
 | _Camellia sinensis_ | AxelBoldt at en.wikipedia | Public domain | [Commons file page](https://commons.wikimedia.org/wiki/File:Csinensis.jpg) |
 | _Vanilla planifolia_ | Franz Eugen Köhler, Köhler's Medizinal-Pflanzen | Public domain | [Commons file page](https://commons.wikimedia.org/wiki/File:Vanilla_planifolia_-_K%C3%B6hler%E2%80%93s_Medizinal-Pflanzen-278.jpg) |
+
+# kaiski tetris credits
+
+## Typeface
+
+The falling pieces and HUD digits reproduce the letterforms of
+**[kaiski 2x3](https://fontstruct.com/fontstructions/show/2898352)** by
+**kimeiga**, published on [FontStruct](https://fontstruct.com/) under the
+FontStruct Non-Commercial License. The font file itself is not embedded or
+redistributed; the glyphs' brick grids were transcribed by hand and drawn on a
+canvas as game pieces.
+
+## Text
+
+Each level typesets the verbatim opening paragraph of an essay from kimeiga's
+**[delta galaxy](https://deltastar.substack.com/)** Substack, quoted as short
+excerpts with a link to the full essay in-game:
+
+| Level | Essay | Source |
+| --- | --- | --- |
+| 1 | "in life there is rain" | [deltastar.substack.com/p/in-life-there-is-rain](https://deltastar.substack.com/p/in-life-there-is-rain) |
+| 2 | "On the benign unprovability of our perception being reality" | [deltastar.substack.com/p/on-the-benign-unprovability-of-our](https://deltastar.substack.com/p/on-the-benign-unprovability-of-our) |
+| 3 | "stuck on repeat" | [deltastar.substack.com/p/stuck-on-repeat](https://deltastar.substack.com/p/stuck-on-repeat) |
+
+## Music
+
+Each level loops a track supplied by the site's author for this project:
+
+| Level | Track | File |
+| --- | --- | --- |
+| 1 | "The Lurkers" | `static/audio/music/the-lurkers.mp3` |
+| 2 | "The Simple Room Group" | `static/audio/music/the-simple-room-group.mp3` |
+| 3 | "Sunnyvale Solitude" | `static/audio/music/sunnyvale-solitude.mp3` |
+
+The move, rotate, drop, lock, line-clear, top-out, and completion effects were
+generated for the game with ElevenLabs Sound Effects on August 15, 2026.
+The Double, Triple, and Tetris line-clear announcements use the Haki voice from
+ElevenLabs, supplied by the site's author.
+
+## Visual design
+
+The page's dark palette, type treatment, and layout are an homage to
+[hakanalpay.com](https://hakanalpay.com/), kimeiga's personal site (with his
+commercial display face swapped for its own public fallback stack).

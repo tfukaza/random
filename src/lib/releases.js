@@ -5,6 +5,52 @@
  */
 export const releases = [
 	{
+		version: '0.8.0',
+		date: 'August 15, 2026',
+		dateIso: '2026-08-15',
+		label: 'Type you can hear',
+		summary:
+			'kaiski tetris gains a tactile soundscape, with every movement and payoff mixed clearly above the music.',
+		sections: [
+			{
+				title: 'Added',
+				items: [
+					'Letter blocks now tick, turn, drop, settle, clear, topple, and complete passages with custom ElevenLabs sound effects.',
+					'Haki now calls out Double, Triple, and Tetris clears while the music briefly steps aside.'
+				]
+			},
+			{
+				title: 'Changed',
+				items: [
+					'The Tetris audio mix keeps its cues restrained and the background score present, including during spoken line-clear callouts.'
+				]
+			}
+		]
+	},
+	{
+		version: '0.7.0',
+		date: 'August 15, 2026',
+		dateIso: '2026-08-15',
+		label: 'The instrument gains neighbors',
+		summary:
+			'The Evaluation moves to its own address at /quiz, and the front door now opens onto an index of assorted experiments — including a typographic tetris.',
+		sections: [
+			{
+				title: 'Changed',
+				items: [
+					'The Standardized Evaluation of Emotional Disposition is now administered at /quiz. The site root has become an index of experiments, of which the Evaluation is entry No. 1.'
+				]
+			},
+			{
+				title: 'Added',
+				items: [
+					'kaiski tetris: a falling-block game in which every piece is a letter of kimeiga’s kaiski typeface, and each level typesets the opening paragraph of one of his essays, character by character. Letters the font never drew appear struck through and do not fall.',
+				'The first level is scored with “The Lurkers,” and the whole game is dressed after kimeiga’s own website.'
+				]
+			}
+		]
+	},
+	{
 		version: '0.6.0',
 		date: 'July 20, 2026',
 		dateIso: '2026-07-20',

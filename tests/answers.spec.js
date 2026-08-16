@@ -2,7 +2,7 @@
 import { expect, test } from '@playwright/test';
 
 async function questionNumber(page, id) {
-	await page.goto('/');
+	await page.goto('/quiz');
 	// Let the root onMount complete before importing through Vite; otherwise a
 	// debug-route remount can destroy the evaluation context on slower engines.
 	await page.waitForTimeout(100);
@@ -14,7 +14,7 @@ async function questionNumber(page, id) {
 
 test('declining to provide a birth date skips directly to the next question', async ({ page }) => {
 	const q = await questionNumber(page, 'birth-date');
-	await page.goto(`/?q=${q}`);
+	await page.goto(`/quiz?q=${q}`);
 	await page.getByRole('button', { name: 'I would rather not say' }).click();
 	await expect(page).toHaveURL(new RegExp(`\\?q=${q + 1}$`));
 
@@ -29,7 +29,7 @@ test('declining to provide a birth date skips directly to the next question', as
 
 test('a choice remains editable until the dedicated submit action', async ({ page }) => {
 	const q = await questionNumber(page, 'party');
-	await page.goto(`/?q=${q}`);
+	await page.goto(`/quiz?q=${q}`);
 	const submit = page.locator('[data-answer-submit]');
 	await expect(submit).toBeDisabled();
 
@@ -53,7 +53,7 @@ test('a choice remains editable until the dedicated submit action', async ({ pag
 
 test('survey sliders can submit their visible midpoint without being moved', async ({ page }) => {
 	const q = await questionNumber(page, 'honesty-claim');
-	await page.goto(`/?q=${q}`);
+	await page.goto(`/quiz?q=${q}`);
 	const submit = page.locator('[data-answer-submit]');
 	await expect(submit).toBeEnabled();
 	await expect(page).toHaveURL(new RegExp(`\\?q=${q}$`));
@@ -70,7 +70,7 @@ test('survey sliders can submit their visible midpoint without being moved', asy
 
 test('slider revisions count direction changes, not continued movement', async ({ page }) => {
 	const q = await questionNumber(page, 'honesty-claim');
-	await page.goto(`/?q=${q}`);
+	await page.goto(`/quiz?q=${q}`);
 	const slider = page.locator('input[type="range"]');
 	await slider.press('ArrowLeft');
 	await slider.press('ArrowLeft');
@@ -86,7 +86,7 @@ test('slider revisions count direction changes, not continued movement', async (
 
 test('multi-selects require a real choice and submit changes color without resizing', async ({ page }) => {
 	const q = await questionNumber(page, 'comfort-friend');
-	await page.goto(`/?q=${q}`);
+	await page.goto(`/quiz?q=${q}`);
 	const submit = page.locator('[data-answer-submit]');
 	await expect(submit).toBeDisabled();
 	await expect(page.locator('[data-answer-id="none"]')).toHaveCount(0);
@@ -122,7 +122,7 @@ test('multi-selects require a real choice and submit changes color without resiz
 
 test('ranking revisions begin after the full-reversal movement budget', async ({ page }) => {
 	const q = await questionNumber(page, 'rank-satisfying');
-	await page.goto(`/?q=${q}`);
+	await page.goto(`/quiz?q=${q}`);
 	const down = page.getByRole('button', { name: 'Move Taking a vacation down' });
 	const up = page.getByRole('button', { name: 'Move Taking a vacation up' });
 
@@ -145,7 +145,7 @@ test('ranking revisions begin after the full-reversal movement budget', async ({
 
 test('every text-field backspace counts as changing the answer', async ({ page }) => {
 	const q = await questionNumber(page, 'favourite-food');
-	await page.goto(`/?q=${q}`);
+	await page.goto(`/quiz?q=${q}`);
 	const input = page.locator('input[type="text"]');
 	await input.fill('abcd');
 	await input.press('Backspace');
@@ -160,14 +160,14 @@ test('every text-field backspace counts as changing the answer', async ({ page }
 test('the coffee follow-up only asks for a real donation after a pledge', async ({ page }) => {
 	const q = await questionNumber(page, 'coffee-button');
 
-	await page.goto(`/?q=${q}`);
+	await page.goto(`/quiz?q=${q}`);
 	await page.locator('[data-answer-id="0"]').click();
 	await page.locator('[data-answer-submit]').click();
 	await expect(page).toHaveURL(new RegExp(`\\?q=${q + 1}$`));
 	await expect(page.getByRole('heading', { name: 'What would motivate you to donate money?' })).toBeVisible();
 	await expect(page.locator('a[href*="ko-fi.com"]')).toHaveCount(0);
 
-	await page.goto(`/?q=${q}`);
+	await page.goto(`/quiz?q=${q}`);
 	await page.locator('[data-answer-id="1"]').click();
 	await page.locator('[data-answer-submit]').click();
 	await expect(page).toHaveURL(new RegExp(`\\?q=${q + 1}$`));
@@ -186,7 +186,7 @@ test('dinner allocations unwrap Svelte state without DataCloneError', async ({ p
 	const errors = [];
 	page.on('pageerror', (error) => errors.push(error.message));
 	const q = await questionNumber(page, 'perfect-dinner');
-	await page.goto(`/?q=${q}`);
+	await page.goto(`/quiz?q=${q}`);
 
 	await page.getByRole('button', { name: 'More Venue' }).click();
 	await page.getByRole('button', { name: 'More Appetizer' }).click();
@@ -203,7 +203,7 @@ test('dinner allocations unwrap Svelte state without DataCloneError', async ({ p
 
 test('generated box sprites load, drag, and carry into the airport follow-up', async ({ page }) => {
 	const q = await questionNumber(page, 'pack-box');
-	await page.goto(`/?q=${q}`);
+	await page.goto(`/quiz?q=${q}`);
 	const sprites = page.locator('.pool-sprite img');
 	await expect(sprites).toHaveCount(16);
 	await expect
@@ -250,7 +250,7 @@ test('every drag surface suppresses accidental text selection', async ({ page })
 
 	for (const [id, selector] of surfaces) {
 		const q = await questionNumber(page, id);
-		await page.goto(`/?q=${q}`);
+		await page.goto(`/quiz?q=${q}`);
 		const surface = page.locator(selector).first();
 		await expect(surface).toBeAttached();
 		await expect(surface).toHaveCSS('user-select', 'none');
@@ -259,7 +259,7 @@ test('every drag surface suppresses accidental text selection', async ({ page })
 
 test('the classical balance allows exactly one item on each pan', async ({ page }) => {
 	const q = await questionNumber(page, 'balance-scale');
-	await page.goto(`/?q=${q}`);
+	await page.goto(`/quiz?q=${q}`);
 	const pedestal = page.locator('.pedestal-art');
 	const beam = page.locator('.beam-art');
 	const pans = page.locator('.pan-art');
@@ -302,7 +302,7 @@ test('the classical balance allows exactly one item on each pan', async ({ page 
 });
 
 test('retired questions stay out of the flow and remain documented in the hidden gallery', async ({ page }) => {
-	await page.goto('/');
+	await page.goto('/quiz');
 	await expect(page.locator('a[href="/retired-questions"]')).toHaveCount(0);
 	const liveIds = await page.evaluate(async () => {
 		const { questions } = await import('/src/lib/questions/index.js');
@@ -339,7 +339,7 @@ test('the removed alignment and metrics questions are replaced by the pointer he
 		after: 'decision-audit'
 	});
 
-	await page.goto(`/?q=${q}`);
+	await page.goto(`/quiz?q=${q}`);
 	await page.waitForTimeout(100);
 	const picture = page.locator('[data-point-count]');
 	await expect(picture).toBeVisible();
@@ -365,7 +365,7 @@ test('the removed alignment and metrics questions are replaced by the pointer he
 
 test('rotating circles move one at a time and silently exclude a tapped circle', async ({ page }) => {
 	const q = await questionNumber(page, 'rotating-snakes');
-	await page.goto(`/?q=${q}`);
+	await page.goto(`/quiz?q=${q}`);
 	const circles = page.getByRole('button', { name: /^Circle \d+$/ });
 	await expect(circles).toHaveCount(16);
 	await expect(page.locator('.board')).toHaveAttribute('data-burst-degrees', '3');
@@ -405,7 +405,7 @@ test('rotating circles move one at a time and silently exclude a tapped circle',
 test('a hovered circle is removed from the rotation schedule', async ({ page }, testInfo) => {
 	test.skip(testInfo.project.name.startsWith('mobile'), 'Touch projects exercise the persistent tap path.');
 	const q = await questionNumber(page, 'rotating-snakes');
-	await page.goto(`/?q=${q}`);
+	await page.goto(`/quiz?q=${q}`);
 	const circle = page.getByRole('button', { name: 'Circle 1', exact: true });
 	await circle.hover();
 
@@ -423,7 +423,7 @@ test('a hovered circle is removed from the rotation schedule', async ({ page }, 
 
 test('the memory scene keeps animated actors in their intended depth layers', async ({ page }) => {
 	const q = await questionNumber(page, 'scene-watch');
-	await page.goto(`/?q=${q}`);
+	await page.goto(`/quiz?q=${q}`);
 	const stage = page.locator('[data-scene-stage]');
 	await expect(stage).toBeVisible({ timeout: 10_000 });
 	await expect(stage.locator('image.scene-base')).toHaveCount(1);
@@ -453,7 +453,7 @@ test('the memory scene keeps animated actors in their intended depth layers', as
 
 test('mouse hover and touch drag zoom the whole live scene', async ({ page }) => {
 	const q = await questionNumber(page, 'scene-watch');
-	await page.goto(`/?q=${q}`);
+	await page.goto(`/quiz?q=${q}`);
 	const frame = page.locator('.scene-frame');
 	await expect(frame).toBeVisible({ timeout: 10_000 });
 	const box = await frame.boundingBox();
@@ -503,7 +503,7 @@ test('mouse hover and touch drag zoom the whole live scene', async ({ page }) =>
 
 test('replaying the memory scene restarts its actors and observation gate together', async ({ page }) => {
 	const q = await questionNumber(page, 'scene-watch');
-	await page.goto(`/?q=${q}`);
+	await page.goto(`/quiz?q=${q}`);
 	const firstStage = page.locator('[data-scene-stage]');
 	await expect(firstStage).toBeVisible({ timeout: 10_000 });
 	await expect(firstStage).toHaveAttribute('data-scene-replay', '0');
@@ -528,7 +528,7 @@ test('replaying the memory scene restarts its actors and observation gate togeth
 test('the impatient reader preserves controls and unlocks them after reading', async ({ page }) => {
 	test.setTimeout(60_000);
 	const q = await questionNumber(page, 'patience-claim');
-	await page.goto(`/?q=${q}`);
+	await page.goto(`/quiz?q=${q}`);
 	await page.locator('input[type="range"]').fill('1');
 	await expect(page.locator('[data-answer-submit]')).toBeEnabled();
 	await page.locator('[data-answer-submit]').click({ force: true });
