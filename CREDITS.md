@@ -169,7 +169,7 @@ Each level loops a track supplied by the site's author for this project:
 | Level | Track | File |
 | --- | --- | --- |
 | 1 | "The Lurkers" | `static/audio/music/the-lurkers.mp3` |
-| 2 | "The Simple Room Group" | `static/audio/music/the-simple-room-group.mp3` |
+| 2 | "A Theory of The Bed" | `static/audio/music/a-theory-of-the-bed.mp3` |
 | 3 | "Sunnyvale Solitude" | `static/audio/music/sunnyvale-solitude.mp3` |
 
 The move, rotate, drop, lock, line-clear, top-out, and completion effects were

@@ -16,7 +16,7 @@ export const levels = [
 		title: 'On the benign unprovability of our perception being reality',
 		url: 'https://deltastar.substack.com/p/on-the-benign-unprovability-of-our',
 		fallMs: 800,
-		music: '/audio/music/the-simple-room-group.mp3',
+		music: '/audio/music/a-theory-of-the-bed.mp3',
 		passage:
 			'Most of my theories I’ve arrived at alone, laying prostrate on my bed. First in high school summers alone in my room in my parent’s home, then on weekends at uni where I didn’t end up going out and I have the triple room to myself, then postgrad in winter work from home days in the city where I hadn’t anything to do. I can feel the unsolved problems in my subconscious, and when a vacancy in the hubbub of life comes around, they rise to the forefront of my psyche and I feel no choice but to work on them, to think them through.'
 	},
