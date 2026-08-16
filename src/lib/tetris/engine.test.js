@@ -74,7 +74,7 @@ test('pieces spawn above the board, fall, and lock into the floor', () => {
 	const { board: settled, clearedRows, toppedOut } = lockPiece(board, piece);
 	assert.equal(clearedRows.length, 0);
 	assert.equal(toppedOut, false);
-	assert.equal(settled[ROWS - 1][piece.col], piece.wordIndex);
+	assert.equal(settled[ROWS - 1][piece.col], piece.stripIndex);
 });
 
 test('wall kick lets a rotation next to the wall succeed', () => {

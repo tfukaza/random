@@ -27,5 +27,13 @@ export const levels = [
 		music: '/audio/music/sunnyvale-solitude.mp3',
 		passage:
 			'Life has kind of entered a comfortable lull. I’m aware of my dissatisfaction with the way things are going, but am too scared to leave what I’ve spent so long nurturing. Especially the case with my apartment in Sunnyvale, I’ve luckily received many compliments on how clean we keep it, and the nice amenities; and when I tell my friends the rent, they generally are like “Wow that’s quite good”.'
+	},
+	{
+		title: 'Yerkes-Dodson Law',
+		url: 'https://deltastar.substack.com/p/yerkes-dodson-law',
+		fallMs: 600,
+		music: '/audio/music/yerkes-dodson-hyperpop.mp3',
+		passage:
+			'I think it’s important to chill out at work. According to the Yerkes Dodson law there’s an optimal amount of stress (negative and eustress) to perform optimally, too little and you’re bored, too much and you’re likely to choke under pressure.'
 	}
 ];

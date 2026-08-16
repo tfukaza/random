@@ -3,7 +3,7 @@
 import { glyphFor, glyphWidth, glyphHeight } from './glyphs.js';
 
 /** @typedef {import('./glyphs.js').Grid} Grid */
-/** @typedef {(number | null)[][]} Board Cells hold the settled piece's wordIndex, or null. */
+/** @typedef {(number | null)[][]} Board Cells hold the settled piece's stripIndex, or null. */
 /** @typedef {{char: string, playable: boolean, space: boolean, wordIndex: number | null}} StripEntry */
 /** @typedef {{char: string, wordIndex: number, stripIndex: number}} QueueEntry */
 /** @typedef {QueueEntry & {grid: Grid, row: number, col: number}} Piece */
@@ -174,7 +174,7 @@ export function lockPiece(board, piece) {
 			toppedOut = true;
 			continue;
 		}
-		next[r][c] = piece.wordIndex;
+		next[r][c] = piece.stripIndex;
 	}
 	const clearedRows = [];
 	for (let r = 0; r < ROWS; r++) {

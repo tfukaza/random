@@ -161,6 +161,7 @@ excerpts with a link to the full essay in-game:
 | 1 | "in life there is rain" | [deltastar.substack.com/p/in-life-there-is-rain](https://deltastar.substack.com/p/in-life-there-is-rain) |
 | 2 | "On the benign unprovability of our perception being reality" | [deltastar.substack.com/p/on-the-benign-unprovability-of-our](https://deltastar.substack.com/p/on-the-benign-unprovability-of-our) |
 | 3 | "stuck on repeat" | [deltastar.substack.com/p/stuck-on-repeat](https://deltastar.substack.com/p/stuck-on-repeat) |
+| 4 | "Yerkes-Dodson Law" | [deltastar.substack.com/p/yerkes-dodson-law](https://deltastar.substack.com/p/yerkes-dodson-law) |
 
 ## Music
 
@@ -171,6 +172,7 @@ Each level loops a track supplied by the site's author for this project:
 | 1 | "The Lurkers" | `static/audio/music/the-lurkers.mp3` |
 | 2 | "A Theory of The Bed" | `static/audio/music/a-theory-of-the-bed.mp3` |
 | 3 | "Sunnyvale Solitude" | `static/audio/music/sunnyvale-solitude.mp3` |
+| 4 | "Yerkes-Dodson Hyperpop" | `static/audio/music/yerkes-dodson-hyperpop.mp3` |
 
 The move, rotate, drop, lock, line-clear, top-out, and completion effects were
 generated for the game with ElevenLabs Sound Effects on August 15, 2026.

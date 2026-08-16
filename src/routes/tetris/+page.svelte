@@ -462,14 +462,16 @@
 		ctx.stroke();
 		ctx.globalAlpha = 1;
 
-		// Settled type: neighbouring words alternate tone so the text stays
-		// legible as text even once it's rubble.
+		// Settled type: each letter keeps its own tone (cycled from its position
+		// in the passage), so boundaries between settled letters stay readable
+		// instead of merging into one slab.
+		const TONES = [0.94, 0.72, 0.55, 0.84, 0.63];
 		for (let r = 0; r < ROWS; r++) {
 			for (let c = 0; c < COLS; c++) {
-				const word = board[r][c];
-				if (word === null) continue;
+				const pieceId = board[r][c];
+				if (pieceId === null) continue;
 				ctx.fillStyle = colors.ink;
-				ctx.globalAlpha = word % 2 === 0 ? 0.88 : 0.62;
+				ctx.globalAlpha = TONES[pieceId % TONES.length];
 				ctx.fillRect(c * CELL, r * CELL, CELL, CELL);
 			}
 		}
