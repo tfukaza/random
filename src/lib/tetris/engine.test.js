@@ -29,27 +29,30 @@ test('every glyph fits the 2x3 brick grid and has at least one brick', () => {
 	}
 });
 
-test('glyph lookup is case-insensitive and h borrows capital H', () => {
+test('glyph lookup is case-insensitive and covers the whole alphabet', () => {
+	for (const char of 'abcdefghijklmnopqrstuvwxyz0123456789') {
+		assert.ok(glyphFor(char), `${char} should be drawn`);
+	}
 	assert.deepEqual(glyphFor('A'), glyphFor('a'));
 	assert.deepEqual(glyphFor('h'), ['##', '..', '##']);
-	assert.equal(glyphFor('z'), null);
 	assert.equal(glyphFor('!'), null);
+	assert.equal(glyphFor(','), null);
 });
 
 test('queueFromPassage keeps only drawable characters, in order', () => {
 	const queue = queueFromPassage('to be, ok?');
 	assert.deepEqual(
 		queue.map((entry) => entry.char),
-		['t', 'o', 'b', 'e', 'o'] // comma, question mark, and 'k' are undrawn
+		['t', 'o', 'b', 'e', 'o', 'k'] // comma and question mark are undrawn
 	);
 	assert.deepEqual(
 		queue.map((entry) => entry.wordIndex),
-		[0, 0, 1, 1, 2]
+		[0, 0, 1, 1, 2, 2]
 	);
 });
 
 test('annotatePassage marks undrawable characters as unplayable but keeps them', () => {
-	const strip = annotatePassage('a z');
+	const strip = annotatePassage('a !');
 	assert.equal(strip.length, 3);
 	assert.equal(strip[0].playable, true);
 	assert.equal(strip[1].space, true);

@@ -1,11 +1,11 @@
 // Brick grids for kimeiga's "kaiski 2x3" FontStruct typeface
-// (https://fontstruct.com/fontstructions/show/2898352). Every defined glyph
-// lives on a 2-wide x 3-tall grid; rows read top to bottom, '#' is a brick.
-// The shapes were sampled from FontStruct's own renderer, so these are the
-// font's real letterforms — the pieces in the game ARE the font.
-//
-// The font leaves d j k l p q w x y z (and all punctuation) undrawn. That
-// lossiness is kept on display in the game rather than papered over.
+// (https://fontstruct.com/fontstructions/show/2898352). Every glyph lives on
+// a 2-wide x 3-tall grid; rows read top to bottom, '#' is a brick. The shapes
+// were extracted from the downloaded OTF (FontStruct's web renderer serves a
+// stale build that is missing ten letters), so these are the font's real
+// letterforms — the pieces in the game ARE the font. The full a-z and 0-9 are
+// drawn; uppercase is identical to lowercase. Punctuation stays undrawn and
+// is skipped in play.
 
 /** @typedef {string[]} Grid A glyph as rows of '#' (brick) and '.' (empty). */
 
@@ -14,21 +14,29 @@ export const GLYPHS = {
 	a: ['.', '.', '#'],
 	b: ['#.', '##', '##'],
 	c: ['##', '#.', '##'],
+	d: ['.#', '##', '##'],
 	e: ['#', '.', '#'],
 	f: ['##', '..', '#.'],
 	g: ['##', '.#', '#.'],
-	// Lowercase h is undrawn but the font does define capital H — the one
-	// letter where we borrow the capital so words like "the" survive.
 	h: ['##', '..', '##'],
 	i: ['#', '#', '#'],
+	j: ['.#', '.#', '##'],
+	k: ['##', '#.', '.#'],
+	l: ['#.', '#.', '##'],
 	m: ['##', '.#', '##'],
 	n: ['.', '#', '#'],
 	o: ['.', '#', '.'],
+	p: ['##', '##', '#.'],
+	q: ['##', '##', '.#'],
 	r: ['##', '#.', '#.'],
 	s: ['#.', '##', '.#'],
 	t: ['#', '.', '.'],
 	u: ['#', '#', '.'],
 	v: ['.#', '#.', '.#'],
+	w: ['.#', '#.', '##'],
+	x: ['#.', '.#', '#.'],
+	y: ['##', '..', '.#'],
+	z: ['.#', '##', '#.'],
 	0: ['##', '##', '##'],
 	1: ['#.', '.#', '.#'],
 	2: ['..', '#.', '##'],
@@ -43,8 +51,8 @@ export const GLYPHS = {
 
 /**
  * The glyph for a character of running text, or null if the font doesn't
- * draw it. Case-insensitive: A/B/C match their lowercase forms in the font,
- * and 'h' resolves to capital H (see above).
+ * draw it (punctuation). Case-insensitive: the font draws uppercase and
+ * lowercase identically.
  * @param {string} char
  * @returns {Grid | null}
  */

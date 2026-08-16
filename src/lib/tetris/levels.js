@@ -1,6 +1,7 @@
 // Each level is the verbatim opening of one of kimeiga's delta galaxy essays,
 // trimmed at a sentence boundary. The piece queue is the passage's characters
-// in reading order; letters the kaiski font doesn't draw are skipped. `fallMs` is the gravity interval for the level;
+// in reading order; characters the font doesn't draw (punctuation) are
+// skipped. `fallMs` is the gravity interval for the level;
 // `music` (optional) loops while the level is being played.
 /** @type {{title: string, url: string, fallMs: number, passage: string, music?: string}[]} */
 export const levels = [
