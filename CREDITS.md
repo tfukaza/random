@@ -182,3 +182,7 @@ ElevenLabs, supplied by the site's author.
 The page's dark palette, type treatment, and layout are an homage to
 [hakanalpay.com](https://hakanalpay.com/), kimeiga's personal site (with his
 commercial display face swapped for its own public fallback stack).
+
+The social-sharing card is an AI-assisted pixel-art transformation of
+[Hakan Alpay's homepage portrait](https://hakanalpay.com/haki-main.jpg), used
+with the game's title and visual palette.

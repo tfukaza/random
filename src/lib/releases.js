@@ -10,13 +10,14 @@ export const releases = [
 		dateIso: '2026-08-15',
 		label: 'Type you can hear',
 		summary:
-			'kaiski tetris gains a tactile soundscape, with every movement and payoff mixed clearly above the music.',
+			'kaiski tetris gains a tactile soundscape and a pixel-art identity for social sharing.',
 		sections: [
 			{
 				title: 'Added',
 				items: [
 					'Letter blocks now tick, turn, drop, settle, clear, topple, and complete passages with custom ElevenLabs sound effects.',
-					'Haki now calls out Double, Triple, and Tetris clears while the music briefly steps aside.'
+					'Haki now calls out Double, Triple, and Tetris clears while the music briefly steps aside.',
+					'Shared Tetris links now unfold into a custom pixel-art card featuring Hakan and the game’s title.'
 				]
 			},
 			{

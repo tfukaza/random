@@ -620,6 +620,25 @@
 		property="og:description"
 		content="Tetris where every falling piece is a letter of kimeiga's kaiski typeface and every level typesets one of his essays."
 	/>
+	<meta property="og:image" content="https://random-tau-two.vercel.app/images/tetris-social.png" />
+	<meta property="og:image:type" content="image/png" />
+	<meta property="og:image:width" content="1200" />
+	<meta property="og:image:height" content="630" />
+	<meta
+		property="og:image:alt"
+		content="Pixel-art portrait of Hakan Alpay beside the words kai ski tetris"
+	/>
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:title" content="kaiski tetris" />
+	<meta
+		name="twitter:description"
+		content="Tetris where every falling piece is a letter of kimeiga's kaiski typeface."
+	/>
+	<meta name="twitter:image" content="https://random-tau-two.vercel.app/images/tetris-social.png" />
+	<meta
+		name="twitter:image:alt"
+		content="Pixel-art portrait of Hakan Alpay beside the words kai ski tetris"
+	/>
 </svelte:head>
 
 <svelte:window onkeydown={handleKey} onkeyup={handleKeyUp} />
@@ -628,7 +647,6 @@
 	<main>
 		<header class="masthead">
 			<nav aria-label="Breadcrumb"><a class="back" href="/">← Index</a></nav>
-			<p class="kicker">Experiment No. 2 — after hakanalpay.com</p>
 			<h1>
 				kaiski <em>tetris</em>
 				<span class="gloss" aria-hidden="true">テトリス</span>
@@ -797,17 +815,9 @@
 		color: var(--seal);
 	}
 
-	.kicker {
-		margin: 1.6rem 0 0.4rem;
-		font-size: 0.72rem;
-		text-transform: uppercase;
-		letter-spacing: 0.24em;
-		color: var(--ink-faint);
-	}
-
 	h1 {
 		position: relative;
-		margin: 0 0 1.1rem;
+		margin: 1.6rem 0 1.1rem;
 		font-family: var(--font-display);
 		font-weight: 700;
 		font-size: clamp(2.6rem, 9vw, 4.6rem);

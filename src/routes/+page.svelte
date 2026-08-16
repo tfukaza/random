@@ -1,6 +1,6 @@
 <script>
-	// The site's front matter: a running index of experiments. Append here and
-	// the shelf grows a row — numbering and rules take care of themselves.
+	// The site's front matter: an unordered index of experiments. Append here
+	// and the grid grows a cell.
 	const experiments = [
 		{
 			href: '/quiz',
@@ -14,7 +14,7 @@
 			title: 'kaiski tetris',
 			kind: 'Game',
 			blurb:
-				'Falling blocks, except every piece is a letter of kimeiga’s kaiski typeface and every level is one of his essays, set one character at a time.'
+				'Falling blocks, except every piece is a letter of a pixel typeface and every level is an essay, set one character at a time.'
 		}
 	];
 </script>
@@ -32,166 +32,287 @@
 		property="og:description"
 		content="An index of small experiments and websites: a personality instrument, a typographic tetris, and whatever comes next."
 	/>
+	<link rel="preconnect" href="https://fonts.googleapis.com" />
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
+	<link
+		href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400..700&family=Geist:wght@100..900&family=DotGothic16&display=swap"
+		rel="stylesheet"
+	/>
 </svelte:head>
 
-<main>
-	<header class="masthead">
-		<p class="kicker">An index of</p>
-		<h1>Assorted Experiments</h1>
-		<hr class="rule rule--scotch" />
-		<p class="lede">
-			Small things built for no particular reason, shelved here in the order they appeared.
-		</p>
+<div class="stage">
+	<div class="rails" aria-hidden="true"></div>
+
+	<header class="site-header">
+		<div class="shell header-shell">
+			<span class="brand">Assorted Experiments</span>
+			<span class="header-count">{experiments.length} entries</span>
+		</div>
 	</header>
 
-	<section class="shelf" aria-label="Experiments">
-		{#each experiments as experiment, index (experiment.href)}
-			<a class="entry" href={experiment.href} style="animation-delay: {120 + index * 90}ms">
-				<span class="entry-no">No. {index + 1}</span>
-				<span class="entry-body">
-					<span class="entry-title">{experiment.title}</span>
-					<span class="entry-blurb">{experiment.blurb}</span>
-				</span>
-				<span class="entry-kind">{experiment.kind}</span>
-			</a>
-		{/each}
-	</section>
+	<main>
+		<section class="shell hero" aria-labelledby="page-title">
+			<div class="hero-copy">
+				<h1 id="page-title">Small things, built for no particular reason.</h1>
+				<p class="lede">An index of experiments and other websites, in no particular order.</p>
+			</div>
+			<div class="hero-panel" aria-hidden="true"></div>
+		</section>
 
-	<footer>
-		<hr class="rule" />
-		<p class="colophon">Further entries as they occur.</p>
+		<section class="shell section" aria-labelledby="experiments-title">
+			<h2 id="experiments-title" class="section-title">Experiments</h2>
+			<div class="grid">
+				{#each experiments as experiment (experiment.href)}
+					<a class="card" href={experiment.href}>
+						<div class="card-head">
+							<span class="card-kind">{experiment.kind}</span>
+						</div>
+						<h3>{experiment.title}</h3>
+						<p class="card-copy">{experiment.blurb}</p>
+					</a>
+				{/each}
+				<div class="card card-empty" aria-hidden="true"></div>
+			</div>
+		</section>
+	</main>
+
+	<footer class="site-footer">
+		<div class="shell footer-shell">
+			<span class="footer-note">Further entries as they occur.</span>
+		</div>
 	</footer>
-</main>
+</div>
 
 <style>
-	main {
-		max-width: var(--maxw);
+	/* Neutral grammar borrowed from kimu.rec: near-monochrome greys, hairline
+	   borders collapsed with -1px margins, zero radii, zero shadows, pixel
+	   type for structure and Geist for small grey meta copy. */
+	.stage {
+		--n-bg: #f7f7f7;
+		--n-panel: #efefef;
+		--n-panel-deep: #ebebeb;
+		--n-text: #111111;
+		--n-muted: #6f6f6f;
+		--n-body: #4f4f4f;
+		--n-line: #dcdcdc;
+		--n-line-strong: #cfcfcf;
+		--n-dash: #d2d2d2;
+		--jp: 'DotGothic16';
+		--pixel: 'Pixelify Sans', var(--jp), ui-monospace, monospace;
+		--sans: 'Geist', var(--jp), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+		--shell: 1080px;
+		--shell-pad: 24px;
+		--gap-section: clamp(72px, 10vw, 150px);
+
+		position: relative;
+		min-height: 100dvh;
+		background: var(--n-bg);
+		color: var(--n-text);
+		font-family: var(--pixel);
+		display: flex;
+		flex-direction: column;
+	}
+
+	.rails {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		left: 50%;
+		z-index: 0;
+		width: min(var(--shell), calc(100% - var(--shell-pad) * 2));
+		border-left: 1px dashed var(--n-dash);
+		border-right: 1px dashed var(--n-dash);
+		transform: translateX(-50%);
+		pointer-events: none;
+	}
+
+	.shell {
+		position: relative;
+		z-index: 1;
+		width: min(var(--shell), calc(100% - var(--shell-pad) * 2));
 		margin: 0 auto;
-		padding: clamp(3rem, 10vh, 6rem) 1.25rem 4rem;
 	}
 
-	.masthead {
-		animation: rise 0.6s ease both;
+	.site-header {
+		background: var(--n-bg);
+		border-bottom: 1px solid var(--n-line-strong);
 	}
 
-	.kicker {
-		margin: 0 0 0.35rem;
-		font-size: 0.72rem;
-		text-transform: uppercase;
-		letter-spacing: 0.22em;
-		color: var(--muted);
+	.header-shell {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 24px;
+		min-height: 64px;
+	}
+
+	.brand {
+		font-size: clamp(1.25rem, 2vw, 1.6rem);
+		font-weight: 400;
+		line-height: 1;
+	}
+
+	.header-count {
+		font-family: var(--sans);
+		font-size: 0.9rem;
+		color: var(--n-muted);
+	}
+
+	main {
+		flex: 1;
+	}
+
+	.hero {
+		margin-top: clamp(40px, 6vw, 80px);
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) 35%;
+		align-items: stretch;
+		min-height: clamp(300px, 36vw, 480px);
+		border: 1px solid var(--n-line);
+	}
+
+	.hero-copy {
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+		gap: 18px;
+		padding: clamp(28px, 5vw, 72px);
 	}
 
 	h1 {
-		margin: 0 0 1rem;
-		font-size: clamp(2.1rem, 6vw, 3rem);
-		line-height: 1.05;
+		margin: 0;
+		max-width: 14ch;
+		font-family: var(--pixel);
+		font-size: clamp(2rem, 5.4vw, 4.25rem);
+		font-weight: 400;
+		line-height: 1.04;
+		letter-spacing: 0.01em;
+		text-shadow: none;
 	}
 
 	.lede {
-		margin: 1rem 0 0;
-		color: var(--muted);
-		font-style: italic;
+		margin: 0;
+		font-family: var(--sans);
+		font-size: 0.95rem;
+		line-height: 1.9;
+		color: var(--n-muted);
 	}
 
-	.shelf {
-		margin-top: 2.5rem;
-		display: flex;
-		flex-direction: column;
+	.hero-panel {
+		background: var(--n-panel);
+		border-left: 1px solid var(--n-line);
 	}
 
-	.entry {
-		display: grid;
-		grid-template-columns: 4rem 1fr auto;
-		gap: 1rem;
-		align-items: baseline;
-		padding: 1.35rem 0.5rem;
-		border-top: 1px solid var(--rule);
-		box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7) inset;
-		text-decoration: none;
-		color: inherit;
-		animation: rise 0.6s ease both;
-		transition: background 160ms ease;
+	.section {
+		margin-top: var(--gap-section);
+		margin-bottom: var(--gap-section);
 	}
 
-	.entry:last-child {
-		border-bottom: 1px solid var(--rule);
-	}
-
-	.entry:hover,
-	.entry:focus-visible {
-		background: var(--accent-soft);
-	}
-
-	.entry:focus-visible {
-		outline: 2px solid var(--ink);
-		outline-offset: 2px;
-	}
-
-	.entry-no {
-		font-size: 0.72rem;
+	.section-title {
+		margin: 0 0 clamp(28px, 4vw, 48px);
+		font-family: var(--pixel);
+		font-size: clamp(0.95rem, 1.3vw, 1.1rem);
+		font-weight: 400;
+		line-height: 1;
+		letter-spacing: 0.08em;
 		text-transform: uppercase;
-		letter-spacing: 0.14em;
-		color: var(--muted);
-		font-variant-numeric: tabular-nums;
+		color: var(--n-muted);
+		text-shadow: none;
 	}
 
-	.entry-body {
+	.grid {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: 0;
+	}
+
+	@media (min-width: 700px) {
+		.grid {
+			grid-template-columns: repeat(3, minmax(0, 1fr));
+		}
+	}
+
+	.card {
 		display: flex;
 		flex-direction: column;
-		gap: 0.35rem;
+		gap: 12px;
+		min-height: 300px;
+		padding: 22px 24px;
+		background: var(--n-panel);
+		border: 1px solid var(--n-line-strong);
+		margin: 0 -1px -1px 0;
+		color: inherit;
+		text-decoration: none;
+		transition: background 120ms ease;
 	}
 
-	.entry-title {
-		font-family: 'Cormorant Garamond', Georgia, serif;
-		font-weight: 700;
-		font-size: 1.35rem;
-		line-height: 1.2;
+	a.card:hover,
+	a.card:focus-visible {
+		background: var(--n-panel-deep);
+	}
+
+	a.card:focus-visible {
+		outline: 1px solid var(--n-text);
+		outline-offset: -4px;
+	}
+
+	.card-head {
+		display: flex;
+		justify-content: space-between;
+		gap: 12px;
+		font-size: 0.9rem;
+		color: var(--n-muted);
+	}
+
+	.card h3 {
+		margin: 0;
+		font-family: var(--pixel);
+		font-size: clamp(1.2rem, 1.9vw, 1.6rem);
+		font-weight: 400;
+		line-height: 1.15;
+		letter-spacing: 0.01em;
+		text-shadow: none;
 		text-wrap: balance;
 	}
 
-	.entry:hover .entry-title,
-	.entry:focus-visible .entry-title {
-		text-decoration: underline;
-		text-underline-offset: 3px;
-		text-decoration-thickness: 1px;
+	.card-copy {
+		margin: auto 0 0;
+		font-family: var(--sans);
+		font-size: 0.9rem;
+		line-height: 1.7;
+		color: var(--n-body);
 	}
 
-	.entry-blurb {
-		font-size: 0.92rem;
-		color: var(--muted);
-		text-wrap: pretty;
+	.card-empty {
+		min-height: 0;
 	}
 
-	.entry-kind {
-		font-size: 0.72rem;
-		text-transform: uppercase;
-		letter-spacing: 0.18em;
-		color: var(--muted);
-	}
-
-	footer {
-		margin-top: 3rem;
-		animation: rise 0.6s ease both;
-		animation-delay: 360ms;
-	}
-
-	.colophon {
-		margin: 0.8rem 0 0;
-		font-size: 0.8rem;
-		font-style: italic;
-		color: var(--muted);
-		text-align: center;
-	}
-
-	@media (max-width: 480px) {
-		.entry {
-			grid-template-columns: 1fr;
-			gap: 0.4rem;
+	@media (max-width: 699px) {
+		.card-empty {
+			display: none;
 		}
-
-		.entry-kind {
-			order: -1;
+		.hero {
+			grid-template-columns: minmax(0, 1fr);
 		}
+		.hero-panel {
+			display: none;
+		}
+	}
+
+	.site-footer {
+		border-top: 1px solid var(--n-line);
+		padding: clamp(28px, 4vw, 48px) 0;
+	}
+
+	.footer-shell {
+		display: flex;
+		justify-content: space-between;
+		gap: 32px;
+	}
+
+	.footer-note {
+		font-family: var(--sans);
+		font-size: 0.9rem;
+		color: var(--n-muted);
 	}
 </style>
